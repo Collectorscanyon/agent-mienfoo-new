@@ -1,6 +1,14 @@
-import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
+import { NEYNAR_API_KEY, SIGNER_UUID } from '../config';
 
-const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY);
+const config = new Configuration({
+  apiKey: NEYNAR_API_KEY,
+});
+
+const neynar = new NeynarAPIClient(config);
+
+// Set 8-hour interval for casts to avoid rate limiting
+const CAST_INTERVAL = 8 * 60 * 60 * 1000;
 
 const messages = [
   "What's your favorite item in your collection? Share with me! 🤔",
@@ -17,7 +25,7 @@ export async function createDailyCast() {
     const randomMessage = messages[Math.floor(Math.random() * messages.length)];
     
     await neynar.publishCast({
-      signer_uuid: process.env.SIGNER_UUID,
+      signerUuid: SIGNER_UUID,
       text: randomMessage
     });
     
@@ -29,9 +37,11 @@ export async function createDailyCast() {
 
 // Schedule daily casts
 export function initializeScheduler() {
-  // Post once every 24 hours
-  setInterval(createDailyCast, 24 * 60 * 60 * 1000);
+  // Post every 8 hours to maintain active presence while avoiding rate limits
+  setInterval(createDailyCast, CAST_INTERVAL);
   
-  // Post initial cast on startup
-  createDailyCast();
+  // Post initial cast on startup with a small delay
+  setTimeout(createDailyCast, 5000);
+  
+  console.log('Scheduler initialized - ready to create periodic casts');
 }

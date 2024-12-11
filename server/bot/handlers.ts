@@ -1,10 +1,27 @@
-import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import { handleCommand } from './commands';
 
-// Initialize Neynar client
-const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY);
+// Import config to ensure type safety
+import { NEYNAR_API_KEY, SIGNER_UUID } from '../config';
+
+// Initialize Neynar client with v2 configuration
+const config = new Configuration({
+  apiKey: NEYNAR_API_KEY,
+});
+
+const neynar = new NeynarAPIClient(config);
 
 // Memory store for user collections
+// Define proper types for Neynar SDK responses
+interface Cast {
+  hash: string;
+  author: {
+    username: string;
+    fid: string;
+  };
+  text: string;
+}
+
 interface CollectionItem {
   item: string;
   added: string;
@@ -16,7 +33,7 @@ interface UserCollection {
 
 const collections: UserCollection = {};
 
-export async function handleMention(cast: any) {
+export async function handleMention(cast: Cast) {
   try {
     const username = cast.author.username;
     const content = cast.text.toLowerCase();
@@ -60,7 +77,7 @@ What's your favorite piece? 🌟`
 export async function reply(parentHash: string, text: string) {
   try {
     await neynar.publishCast({
-      signer_uuid: process.env.SIGNER_UUID,
+      signerUuid: SIGNER_UUID,
       text,
       parent: parentHash
     });
@@ -71,10 +88,10 @@ export async function reply(parentHash: string, text: string) {
 
 export async function likeCast(castHash: string) {
   try {
-    await neynar.reactToCast({
-      signer_uuid: process.env.SIGNER_UUID,
-      reaction_type: 'like',
-      cast_hash: castHash
+    await neynar.publishReaction({
+      signerUuid: SIGNER_UUID,
+      reactionType: 'like',
+      target: castHash
     });
   } catch (error) {
     console.error('Error liking cast:', error);

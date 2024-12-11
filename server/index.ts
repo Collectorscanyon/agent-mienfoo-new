@@ -1,8 +1,16 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
+import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { config, PORT } from "./config";
+
+// Initialize Neynar client with v2 configuration
+const neynarConfig = new Configuration({
+  apiKey: config.NEYNAR_API_KEY,
+});
+
+const neynar = new NeynarAPIClient(neynarConfig);
 
 // Initialize Express app
 const app = express();
@@ -65,7 +73,7 @@ app.use((req, res, next) => {
 
   try {
     // ALWAYS serve the app on port from config (default 5000)
-    const port = parseInt(PORT, 10);
+    const port = Number(PORT);
     server.listen(port, "0.0.0.0", () => {
       log(`🚀 Farcaster bot server running on port ${port}`);
       log(`🤖 Bot ready to handle mentions and commands`);

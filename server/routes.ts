@@ -14,6 +14,11 @@ export function registerRoutes(app: Express): Server {
   // Initialize scheduler for daily casts
   initializeScheduler();
 
+  // Test endpoint
+  app.get('/api/test', (_req, res) => {
+    res.json({ message: 'Bot is alive! 🤖' });
+  });
+
   // Webhook endpoint for Neynar
   app.post('/api/webhook', async (req, res) => {
     try {
