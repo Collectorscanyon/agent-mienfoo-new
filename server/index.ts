@@ -72,8 +72,7 @@ app.use((req, res, next) => {
   }
 
   try {
-    // ALWAYS serve the app on port from config (default 5000)
-    const port = Number(PORT);
+    const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
     server.listen(port, "0.0.0.0", () => {
       log(`🚀 Farcaster bot server running on port ${port}`);
       log(`🤖 Bot ready to handle mentions and commands`);
