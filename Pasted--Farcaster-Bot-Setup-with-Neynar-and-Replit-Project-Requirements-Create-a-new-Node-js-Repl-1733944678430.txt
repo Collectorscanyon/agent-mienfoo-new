@@ -1,0 +1,113 @@
+# Farcaster Bot Setup with Neynar and Replit
+
+## Project Requirements
+- Create a new Node.js Repl
+- Build a Farcaster bot (Mienfoo) that can:
+  - Respond to mentions
+  - Like and recast relevant content
+  - Make comments about collectibles
+  - Track user collections
+  - Maintain a consistent, friendly personality
+
+## Technical Stack
+1. Runtime Environment:
+   - Latest Node.js supported by Replit (18.x)
+   - Express.js for webhook handling
+   - Neynar SDK for Farcaster integration
+
+2. Dependencies to install:
+```bash
+npm init -y
+npm install @neynar/nodejs-sdk express dotenv axios cors
+```
+
+3. Required Environment Variables:
+```
+NEYNAR_API_KEY=your_api_key
+FARCASTER_MNEMONIC=your_mnemonic
+WEBHOOK_SECRET=your_webhook_secret
+```
+
+## Core Features Implementation
+
+1. Webhook Setup:
+- Create webhook endpoints for:
+  - Mentions
+  - Replies
+  - Follows
+  - Collection updates
+- Implement signature verification for security
+- Set up error handling and logging
+
+2. Bot Personality:
+- Friendly and enthusiastic tone
+- Knowledgeable about collectibles
+- Consistent response patterns
+- Engagement rules for different interaction types
+
+3. Collection Tracking:
+- Basic database structure (can use Replit Database)
+- Collection update handlers
+- User interaction history
+
+4. Security Considerations:
+- Webhook signature verification
+- Rate limiting
+- Error handling
+- API key security
+
+## Implementation Steps
+
+1. Initial Setup:
+```javascript
+// index.js
+const express = require('express');
+const { NeynarAPIClient } = require('@neynar/nodejs-sdk');
+const app = express();
+
+require('dotenv').config();
+app.use(express.json());
+
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY);
+```
+
+2. Basic Webhook Handler:
+```javascript
+app.post('/webhook', async (req, res) => {
+  // Verify webhook signature
+  // Process event based on type
+  // Generate appropriate response
+});
+```
+
+3. Main Bot Logic:
+```javascript
+async function handleMention(cast) {
+  // Process mention
+  // Generate response
+  // Post response via Neynar SDK
+}
+```
+
+## Testing Steps
+1. Local Testing:
+   - Use ngrok for webhook testing
+   - Mock different event types
+   - Verify signature validation
+
+2. Replit Deployment:
+   - Set up environment variables
+   - Configure webhook URL
+   - Test live responses
+
+## Next Steps
+1. Implement database connection
+2. Add more sophisticated response patterns
+3. Implement rate limiting
+4. Add monitoring and logging
+5. Create backup and recovery procedures
+
+## Resources
+- Neynar API Documentation: https://docs.neynar.com/
+- Farcaster Protocol: https://farcaster.xyz/
+- Replit Documentation: https://docs.replit.com/

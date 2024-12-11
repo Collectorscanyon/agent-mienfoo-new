@@ -1,0 +1,89 @@
+const { NeynarAPIClient } = require('@neynar/nodejs-sdk');
+require('dotenv').config();
+
+// Initialize Neynar client
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY);
+
+// Basic response handler
+async function handleMention(cast) {
+  try {
+    const username = cast.author.username;
+    const content = cast.text.toLowerCase();
+
+    // Simple greeting responses
+    if (content.includes('hello') || content.includes('hi')) {
+      await reply(cast.hash, 
+        `Hey @${username}! 👋 I'm Mienfoo, excited to chat about collectibles!`
+      );
+    } 
+    // Enthusiastic about collections
+    else if (content.includes('collection') || content.includes('collect')) {
+      await reply(cast.hash,
+        `@${username} Collections are my favorite topic! What kind of items interest you? 🎯`
+      );
+    }
+    // Generic friendly response
+    else {
+      await reply(cast.hash,
+        `@${username} Thanks for reaching out! I love chatting about collectibles and trading cards! 🌟`
+      );
+    }
+
+    // Always like mentions
+    await likeCast(cast.hash);
+  } catch (error) {
+    console.error('Error handling mention:', error);
+  }
+}
+
+// Basic cast and reply functions
+async function reply(parentHash, text) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text,
+      parent: parentHash
+    });
+  } catch (error) {
+    console.error('Error replying to cast:', error);
+  }
+}
+
+async function likeCast(castHash) {
+  try {
+    await neynar.reactToCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      reaction_type: 'like',
+      cast_hash: castHash
+    });
+  } catch (error) {
+    console.error('Error liking cast:', error);
+  }
+}
+
+// Create original casts periodically
+async function createDailyCast() {
+  const messages = [
+    "What's your favorite item in your collection? 🤔",
+    "Did anyone make any exciting additions to their collection today? 🎉",
+    "I love seeing rare finds! Share your latest discoveries with me! ✨",
+    "Who else is excited about collecting? Let's chat! 🌟",
+    "What started your collecting journey? I'd love to hear your story! 📚"
+  ];
+
+  try {
+    const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text: randomMessage
+    });
+  } catch (error) {
+    console.error('Error creating daily cast:', error);
+  }
+}
+
+// Export handlers for webhook use
+module.exports = {
+  handleMention,
+  createDailyCast
+};

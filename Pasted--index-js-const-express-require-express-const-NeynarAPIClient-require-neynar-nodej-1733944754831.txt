@@ -1,0 +1,92 @@
+// index.js
+const express = require('express');
+const { NeynarAPIClient } = require('@neynar/nodejs-sdk');
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY);
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+
+// Basic signature verification middleware
+const verifyWebhook = (req, res, next) => {
+  const signature = req.headers['x-neynar-signature'];
+  // TODO: Implement signature verification
+  next();
+};
+
+// Main webhook handler
+app.post('/webhook', verifyWebhook, async (req, res) => {
+  try {
+    const { type, cast, user } = req.body;
+    
+    switch(type) {
+      case 'mention':
+        await handleMention(cast, user);
+        break;
+      case 'reply':
+        await handleReply(cast, user);
+        break;
+      default:
+        console.log(`Unhandled event type: ${type}`);
+    }
+    
+    res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('Webhook handler error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Handle mentions
+async function handleMention(cast, user) {
+  const content = cast.text.toLowerCase();
+  
+  // Basic response logic
+  if (content.includes('hello') || content.includes('hi')) {
+    await respondToCast(cast.hash, `Hey @${user.username}! 👋 I'm Mienfoo, your friendly collectibles assistant! How can I help you today?`);
+  } else if (content.includes('collection')) {
+    await respondToCast(cast.hash, `@${user.username} I'd love to help you with your collection! What kind of items are you collecting?`);
+  } else {
+    // Default like interaction
+    await likeCast(cast.hash);
+  }
+}
+
+// Handle replies
+async function handleReply(cast, user) {
+  // Basic reply handler
+  await likeCast(cast.hash);
+}
+
+// Helper function to respond to casts
+async function respondToCast(parentHash, text) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text,
+      parent: parentHash
+    });
+  } catch (error) {
+    console.error('Error responding to cast:', error);
+  }
+}
+
+// Helper function to like casts
+async function likeCast(castHash) {
+  try {
+    await neynar.reactToCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      reaction_type: 'like',
+      cast_hash: castHash
+    });
+  } catch (error) {
+    console.error('Error liking cast:', error);
+  }
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});

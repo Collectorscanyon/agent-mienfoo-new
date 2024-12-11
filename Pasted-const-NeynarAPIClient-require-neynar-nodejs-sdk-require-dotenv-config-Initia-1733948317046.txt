@@ -1,0 +1,102 @@
+const { NeynarAPIClient } = require('@neynar/nodejs-sdk');
+require('dotenv').config();
+
+// Initialize Neynar client
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY);
+
+// Simple in-memory store for demo purposes
+// In production, use a proper database
+const userCollections = new Map();
+
+// Main bot handler
+async function handleCast(cast) {
+  const content = cast.text.toLowerCase();
+  const username = cast.author.username;
+  
+  // Ignore our own casts to prevent loops
+  if (username === process.env.BOT_USERNAME) return;
+  
+  try {
+    // Check if the cast mentions our bot
+    if (mentionsBot(content)) {
+      await processBotCommand(cast);
+    }
+  } catch (error) {
+    console.error('Error handling cast:', error);
+  }
+}
+
+function mentionsBot(content) {
+  return content.includes('@mienfoo');
+}
+
+async function processBotCommand(cast) {
+  const content = cast.text.toLowerCase();
+  const username = cast.author.username;
+  
+  // Basic command processing
+  if (content.includes('add')) {
+    const item = extractCollectible(content);
+    if (item) {
+      await addToCollection(cast.author.fid, item);
+      await reply(cast.hash, `@${username} Added "${item}" to your collection! 🎉`);
+    }
+  } else if (content.includes('show') || content.includes('collection')) {
+    const collection = getCollection(cast.author.fid);
+    await reply(cast.hash, formatCollection(username, collection));
+  } else {
+    // Default friendly response
+    await reply(cast.hash, `Hey @${username}! 👋 I can help track your collection! Try:
+• "add [item]" to add something
+• "show collection" to see your items`);
+  }
+}
+
+// Helper functions
+function extractCollectible(content) {
+  const addMatch = content.match(/add\s+(.+)/i);
+  return addMatch ? addMatch[1].trim() : null;
+}
+
+function addToCollection(userId, item) {
+  if (!userCollections.has(userId)) {
+    userCollections.set(userId, []);
+  }
+  userCollections.get(userId).push({
+    item,
+    timestamp: new Date().toISOString()
+  });
+}
+
+function getCollection(userId) {
+  return userCollections.get(userId) || [];
+}
+
+function formatCollection(username, collection) {
+  if (!collection.length) {
+    return `@${username} You haven't added any items yet! Start with "add [item]" 📝`;
+  }
+  
+  const recent = collection.slice(-3)
+    .map(entry => entry.item)
+    .join(', ');
+    
+  return `@${username} Your latest items: ${recent} (Total: ${collection.length})`;
+}
+
+async function reply(parentHash, text) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text: text,
+      parent: parentHash
+    });
+  } catch (error) {
+    console.error('Error replying:', error);
+  }
+}
+
+// Export the handler for use with webhooks
+module.exports = {
+  handleCast
+};

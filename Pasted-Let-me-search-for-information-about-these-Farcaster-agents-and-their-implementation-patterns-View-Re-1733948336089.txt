@@ -1,0 +1,83 @@
+Let me search for information about these Farcaster agents and their implementation patterns.View Result from brave_web_search from brave-search (local){
+  `count`: 5,
+  `query`: `askgina mfergpt aethernet farcaster bot implementation github`
+}Title: Farcaster · GitHub
+Description: A protocol for building sufficiently decentralized social networks - <strong>Farcaster</strong>
+URL: https://github.com/farcasterxyz
+
+Title: GitHub - farcasterxyz/protocol: Specification of the Farcaster Protocol
+Description: Specification of the <strong>Farcaster</strong> Protocol. Contribute to farcasterxyz/protocol development by creating an account on <strong>GitHub</strong>.
+URL: https://github.com/farcasterxyz/protocol
+
+Title: GitHub - backmeupplz/farcaster-chatgpt: Farcaster bot that replies with chatgpt
+Description: <strong>Farcaster</strong> <strong>bot</strong> that replies with chatgpt. Contribute to backmeupplz/<strong>farcaster</strong>-chatgpt development by creating an account on <strong>GitHub</strong>.
+URL: https://github.com/backmeupplz/farcaster-chatgpt
+
+Title: GitHub - teleyinex/farcaster-bot: A simple Farcaster bot using Github Actions and Google Spreadsheets
+Description: A simple <strong>Farcaster</strong> <strong>bot</strong> using <strong>Github</strong> Actions and Google Spreadsheets - teleyinex/<strong>farcaster</strong>-<strong>bot</strong>
+URL: https://github.com/teleyinex/farcaster-bot
+
+Title: GitHub - a16z/awesome-farcaster: A collection of awesome Farcaster links including clients, tools, and more.
+Description: A collection of awesome <strong>Farcaster</strong> links including clients, tools, and more. - a16z/awesome-<strong>farcaster</strong>
+URL: https://github.com/a16z/awesome-farcasterView Result from brave_web_search from brave-search (local){
+  `count`: 5,
+  `query`: `askgina farcaster bot how it works`
+}Title: Ask Gina
+Description: <strong>AskGina</strong> can analyze and describe images shared in your <strong>Farcaster</strong> posts. Share a link, and <strong>AskGina</strong> will provide a concise summary of its content.
+URL: https://askgina.ai/docs
+
+Title: How to create a Farcaster bot with Neynar
+Description: Create a <strong>Farcaster</strong> <strong>bot</strong> on Neynar in a few quick easy steps
+URL: https://docs.neynar.com/docs/how-to-create-a-farcaster-bot
+
+Title: Bots are invading a16z-backed crypto hit Farcaster — its open-source design may be a solution
+Description: <strong>Farcaster</strong>&#x27;s open-source codebase gives its users the ability to tackle <strong>bots</strong> head on.
+URL: https://www.dlnews.com/articles/web3/farcaster-users-could-use-frames-and-nfts-to-stop-bots/
+
+Title: GitHub - teleyinex/farcaster-bot: A simple Farcaster bot using Github Actions and Google Spreadsheets
+Description: A simple <strong>Farcaster</strong> <strong>bot</strong> using Github Actions and Google Spreadsheets - teleyinex/<strong>farcaster</strong>-<strong>bot</strong>
+URL: https://github.com/teleyinex/farcaster-bot
+
+Title: Create Farcaster bot using Neynar dedicated signers
+Description: The document provides instructions for setting up and running gm_<strong>bot</strong> , an automated messaging <strong>bot</strong> that sends a daily &#x27;gm 🪐&#x27; message on Warpcast using the Neynar API, including prerequisites, installation steps, environment configuration, and troubleshooting tips.
+URL: https://docs.neynar.com/docs/farcaster-bot-with-dedicated-signersI see - we need to simplify our approach to focus just on the bot's core functionality without any web interface or additional apps. Let me create a streamlined version that's more in line with how AskGina and mferGPT work.
+Basic Collector Bot CoreClick to open code
+This is a much more focused implementation that:
+
+Only handles core bot functionality
+Processes mentions and commands
+Uses simple in-memory storage (can be replaced with a database)
+Has no web server or UI components
+
+To use this, you'll need:
+
+Environment variables:
+
+CopyNEYNAR_API_KEY=your_api_key
+SIGNER_UUID=your_signer_uuid
+BOT_USERNAME=mienfoo
+
+Connect it to Neynar's webhook system:
+
+javascriptCopy// webhook.js
+const { handleCast } = require('./index');
+
+exports.handler = async (event) => {
+  const { cast } = JSON.parse(event.body);
+  await handleCast(cast);
+  return { statusCode: 200 };
+};
+The bot now:
+
+Responds to mentions
+Tracks collections in memory
+Has simple, focused commands
+No web interface or additional features
+
+Would you like me to:
+
+Add more collection commands?
+Implement persistent storage?
+Add more collector-specific features?
+
+This is much more in line with how AskGina and other Farcaster bots work - just core functionality that responds to mentions and performs specific tasks.
