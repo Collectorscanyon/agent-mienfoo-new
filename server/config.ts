@@ -1,13 +1,31 @@
-// Type-safe config object
+// Type-safe config object with validation
+const validateConfig = () => {
+  const required = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'];
+  const missing = required.filter(key => !process.env[key]);
+  
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+};
+
+// Validate on initialization
+validateConfig();
+
 export const config = {
-  NEYNAR_API_KEY: process.env.NEYNAR_API_KEY || '',
+  NEYNAR_API_KEY: process.env.NEYNAR_API_KEY!,
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
-  SIGNER_UUID: process.env.SIGNER_UUID || '',
-  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || ''
+  SIGNER_UUID: process.env.SIGNER_UUID!,
+  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET!,
+  BOT_USERNAME: process.env.BOT_USERNAME || 'mienfoo',
+  BOT_FID: process.env.BOT_FID || ''
 } as const;
 
-// Exported variables with proper types
-export const NEYNAR_API_KEY: string = config.NEYNAR_API_KEY;
-export const PORT: number = config.PORT;
-export const SIGNER_UUID: string = config.SIGNER_UUID;
-export const WEBHOOK_SECRET: string = config.WEBHOOK_SECRET;
+// Export individual config values with proper types
+export const {
+  NEYNAR_API_KEY,
+  PORT,
+  SIGNER_UUID,
+  WEBHOOK_SECRET,
+  BOT_USERNAME,
+  BOT_FID
+} = config;

@@ -1,16 +1,20 @@
+import 'dotenv/config';  // Load environment variables first
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { config, PORT } from "./config";
+import { NEYNAR_API_KEY, PORT } from "./config";
 
 // Initialize Neynar client with v2 configuration
 const neynarConfig = new Configuration({
-  apiKey: config.NEYNAR_API_KEY,
+  apiKey: NEYNAR_API_KEY,
 });
 
 const neynar = new NeynarAPIClient(neynarConfig);
+
+// Export neynar client for use in other modules
+export { neynar };
 
 // Initialize Express app
 const app = express();

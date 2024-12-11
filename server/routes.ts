@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import crypto from 'crypto';
 import { handleMention } from './bot/handlers';
 import { initializeScheduler } from './bot/scheduler';
+import { WEBHOOK_SECRET } from './config';
 
 function verifySignature(signature: string, body: string, secret: string): boolean {
   const hmac = crypto.createHmac('sha256', secret);
@@ -22,6 +23,11 @@ export function registerRoutes(app: Express): Server {
   // Webhook endpoint for Neynar
   app.post('/api/webhook', async (req, res) => {
     try {
+      console.log('Received webhook request:', {
+        headers: req.headers,
+        body: req.body
+      });
+
       // Verify webhook signature
       const signature = req.headers['x-neynar-signature'] as string;
       const secret = WEBHOOK_SECRET;
@@ -31,14 +37,21 @@ export function registerRoutes(app: Express): Server {
         return res.status(401).json({ error: 'Invalid signature' });
       }
       
-      console.log('Webhook received:', { type, cast });
-
       const { type, cast } = req.body;
+      
+      console.log('Processing webhook:', { type, cast });
 
       // Handle different webhook events
       switch(type) {
         case 'mention':
+          console.log('Handling mention event');
           await handleMention(cast);
+          break;
+        case 'cast.created':
+          if (cast?.mentions?.includes(process.env.BOT_FID)) {
+            console.log('Handling cast with bot mention');
+            await handleMention(cast);
+          }
           break;
         default:
           console.log(`Unhandled event type: ${type}`);

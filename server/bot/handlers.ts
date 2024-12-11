@@ -11,6 +11,9 @@ const config = new Configuration({
 
 const neynar = new NeynarAPIClient(config);
 
+// Skip our own casts to avoid loops
+const BOT_USERNAME = process.env.BOT_USERNAME || 'mienfoo';
+
 // Memory store for user collections
 // Define proper types for Neynar SDK responses
 interface Cast {
