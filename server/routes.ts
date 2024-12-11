@@ -24,11 +24,14 @@ export function registerRoutes(app: Express): Server {
     try {
       // Verify webhook signature
       const signature = req.headers['x-neynar-signature'] as string;
-      const secret = process.env.WEBHOOK_SECRET as string;
+      const secret = WEBHOOK_SECRET;
       
       if (!signature || !verifySignature(signature, JSON.stringify(req.body), secret)) {
+        console.log('Webhook signature verification failed');
         return res.status(401).json({ error: 'Invalid signature' });
       }
+      
+      console.log('Webhook received:', { type, cast });
 
       const { type, cast } = req.body;
 
