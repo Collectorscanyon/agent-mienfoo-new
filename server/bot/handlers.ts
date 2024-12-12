@@ -27,12 +27,19 @@ setInterval(() => {
   }
 }, 60 * 1000); // Clean every minute
 
+function isBotAuthor(author: any): boolean {
+  return (
+    author.fid?.toString() === config.BOT_FID ||
+    author.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
+    author.username?.toLowerCase() === 'mienfoo.eth'
+  );
+}
+
 export async function handleWebhook(event: any) {
   try {
     console.log('Webhook handler started:', {
       eventType: event?.type,
-      timestamp: new Date().toISOString(),
-      rawEvent: JSON.stringify(event, null, 2)
+      timestamp: new Date().toISOString()
     });
 
     if (!event?.type || !event?.data) {
@@ -42,6 +49,7 @@ export async function handleWebhook(event: any) {
 
     const { type, data: cast } = event;
     
+    // Enhanced logging for webhook event processing
     console.log('Processing webhook event:', {
       type,
       timestamp: new Date().toISOString(),
@@ -55,9 +63,7 @@ export async function handleWebhook(event: any) {
 
     if (type === 'cast.created') {
       // Skip if the message is from the bot itself
-      if (cast.author.fid.toString() === config.BOT_FID || 
-          cast.author.username.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
-          cast.author.username.toLowerCase() === 'mienfoo.eth') {
+      if (isBotAuthor(cast.author)) {
         console.log('Skipping bot\'s own message:', {
           hash: cast.hash,
           author: cast.author.username,
@@ -66,25 +72,29 @@ export async function handleWebhook(event: any) {
         return;
       }
 
-      // Check for duplicate messages
-      if (processedCasts.has(cast.hash)) {
+      // Check for duplicate messages using strict deduplication
+      const castKey = `${cast.hash}-${cast.timestamp}`;
+      if (processedCasts.has(castKey)) {
         console.log('Skipping duplicate message:', {
           hash: cast.hash,
-          timeSinceFirst: Date.now() - processedCasts.get(cast.hash)!.timestamp
+          key: castKey,
+          timeSinceFirst: Date.now() - processedCasts.get(castKey)!.timestamp
         });
         return;
       }
 
-      // Add to processed messages
-      processedCasts.set(cast.hash, {
+      // Add to processed messages with compound key
+      processedCasts.set(castKey, {
         hash: cast.hash,
         timestamp: Date.now()
       });
 
-      // Check for mentions of the bot (excluding collectorscanyon.eth)
-      const isMentioned = cast.mentions?.some((m: any) => m.fid.toString() === config.BOT_FID) ||
-                         cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
-                         cast.text?.toLowerCase().includes('@mienfoo.eth');
+      // Check for mentions of the bot
+      const isMentioned = (
+        cast.mentions?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
+        cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
+        cast.text?.toLowerCase().includes('@mienfoo.eth')
+      );
 
       if (isMentioned) {
         console.log('Bot mention detected:', {
@@ -108,6 +118,15 @@ async function handleMention(cast: any) {
       author: cast.author.username,
       text: cast.text
     });
+
+    // Double-check that this isn't a self-message before processing
+    if (isBotAuthor(cast.author)) {
+      console.log('Caught self-message in handleMention:', {
+        hash: cast.hash,
+        author: cast.author.username
+      });
+      return;
+    }
     
     // Like the mention first
     try {
@@ -195,9 +214,7 @@ export async function engageWithChannelContent() {
     for (const cast of response.result.casts) {
       try {
         // Skip bot's own messages and already processed messages
-        if (cast.author.fid.toString() === config.BOT_FID || 
-            cast.author.username.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
-            processedCasts.has(cast.hash)) {
+        if (isBotAuthor(cast.author) || processedCasts.has(cast.hash)) {
           continue;
         }
 
@@ -243,6 +260,8 @@ export async function engageWithChannelContent() {
 }
 
 function isCollectionRelatedContent(text: string): boolean {
+  if (!text) return false;
+  
   const keywords = [
     'collect', 'rare', 'vintage', 'limited edition',
     'first edition', 'mint condition', 'graded', 'sealed',
