@@ -42,61 +42,74 @@ Important:
 - For greetings, be welcoming and invite collection discussion`;
 
 export async function generateBotResponse(userMessage: string): Promise<string> {
-  try {
-    console.log('Generating response for message:', userMessage);
-    
-    // Clean and prepare the user message
-    const cleanedMessage = userMessage.trim();
-    console.log('Cleaned message:', cleanedMessage);
+  const MAX_RETRIES = 3;
+  const BASE_DELAY = 2000; // 2 seconds
 
-    // Check cache first
-    const cacheKey = cleanedMessage.toLowerCase().trim();
-    const cachedResponse = responseCache.get(cacheKey);
-    
-    if (cachedResponse && (Date.now() - cachedResponse.timestamp) < CACHE_TTL) {
-      console.log('Using cached response for:', cleanedMessage);
-      return cachedResponse.response;
-    }
+  async function attemptCompletion(attempt: number = 0): Promise<string> {
+    try {
+      console.log(`Attempt ${attempt + 1}/${MAX_RETRIES} to generate response for:`, userMessage);
+      
+      // Clean and prepare the user message
+      const cleanedMessage = userMessage.trim();
+      console.log('Cleaned message:', cleanedMessage);
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: BASE_PROMPT },
-        { role: "system", content: "Remember to keep responses under 280 characters and maintain your grandpa collector personality." },
-        { role: "user", content: cleanedMessage }
-      ],
-      max_tokens: 150,
-      temperature: 0.7, // Slightly reduced for more consistent responses
-      presence_penalty: 0.3, // Reduced to prevent over-penalization
-      frequency_penalty: 0.3,
-      user: cleanedMessage.slice(0, 64) // Add user identifier for better rate limit tracking
-    });
+      // Check cache first
+      const cacheKey = cleanedMessage.toLowerCase().trim();
+      const cachedResponse = responseCache.get(cacheKey);
+      
+      if (cachedResponse && (Date.now() - cachedResponse.timestamp) < CACHE_TTL) {
+        console.log('Using cached response for:', cleanedMessage);
+        return cachedResponse.response;
+      }
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: BASE_PROMPT },
+          { role: "system", content: "Remember to keep responses under 280 characters and maintain your grandpa collector personality." },
+          { role: "user", content: cleanedMessage }
+        ],
+        max_tokens: 150,
+        temperature: 0.7,
+        presence_penalty: 0.3,
+        frequency_penalty: 0.3,
+        user: `mienfoo_${Date.now()}`  // Unique identifier for each request
+      });
     
     const response = completion.choices[0]?.message?.content;
-    if (!response) {
-      throw new Error('No response generated');
-    }
-    
-    // Cache the response
-    responseCache.set(cacheKey, {
-      response,
-      timestamp: Date.now()
-    });
+      if (!response) {
+        throw new Error('No response generated');
+      }
+      
+      // Cache the response
+      responseCache.set(cacheKey, {
+        response,
+        timestamp: Date.now()
+      });
 
-    // Ensure response ends with hashtag if not present
-    const formattedResponse = response.includes('#CollectorsCanyonClub') 
-      ? response 
-      : `${response} #CollectorsCanyonClub`;
+      // Ensure response ends with hashtag if not present
+      const formattedResponse = response.includes('#CollectorsCanyonClub') 
+        ? response 
+        : `${response} #CollectorsCanyonClub`;
 
-    console.log('Generated response:', formattedResponse);
-    return formattedResponse;
-  } catch (error: any) {
-    console.error('OpenAI Error:', {
-      name: error.name,
-      message: error.message,
-      status: error.response?.status,
-      timestamp: new Date().toISOString()
-    });
+      console.log('Generated response:', formattedResponse);
+      return formattedResponse;
+    } catch (error: any) {
+      console.error('OpenAI Error:', {
+        name: error.name,
+        message: error.message,
+        status: error.response?.status,
+        timestamp: new Date().toISOString(),
+        attempt: attempt + 1
+      });
+
+      // Handle rate limits with exponential backoff
+      if (error.response?.status === 429 && attempt < MAX_RETRIES - 1) {
+        const delay = BASE_DELAY * Math.pow(2, attempt);
+        console.log(`Rate limit hit. Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return attemptCompletion(attempt + 1);
+      }
 
     // Enhanced fallback responses with context categories
     const fallbackResponses = {
@@ -149,13 +162,30 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
     
     const randomResponse = responses[Math.floor(Math.random() * responses.length)];
     
-    // Log the selected contextual fallback response
-    console.log('Using contextual fallback response:', {
-      type: messageType,
-      response: randomResponse,
-      error: error.message
-    });
-    
-    return randomResponse;
+    // If we've exhausted retries or hit a non-rate-limit error
+      return handleFallbackResponse(cleanedMessage, error);
+    }
   }
+
+  return attemptCompletion();
+}
+
+async function handleFallbackResponse(message: string, error: any): Promise<string> {
+  console.log('Generating fallback response due to error:', error.message);
+  
+  // Determine message type and context
+  const messageType = getMessageType(message);
+  const isRateLimit = error.response?.status === 429;
+  
+  // Select appropriate fallback response
+  const response = selectFallbackResponse(messageType, isRateLimit);
+  
+  console.log('Using fallback response:', {
+    type: messageType,
+    isRateLimit,
+    response,
+    error: error.message
+  });
+  
+  return response;
 }
