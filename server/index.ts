@@ -142,10 +142,16 @@ app.post('/webhook', async (req: Request, res: Response) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
+const { PORT } = config;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log('Ready to handle mentions and cast in collectors canyon');
+    console.log('Bot config:', {
+        username: config.BOT_USERNAME,
+        fid: config.BOT_FID,
+        hasNeynarKey: !!config.NEYNAR_API_KEY,
+        hasSignerUuid: !!config.SIGNER_UUID
+    });
 }).on('error', (error) => {
     console.error('Server failed to start:', error);
     process.exit(1);

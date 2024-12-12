@@ -1,0 +1,69 @@
+From the logs, it’s clear that the webhook is successfully receiving events, but the bot isn't responding. Here are the steps to debug and fix the issue:
+
+1. Confirm Mention Logic
+Ensure the bot is correctly detecting mentions of @mienfoo.eth in the payload. Based on the payload:
+json
+Copy code
+"mentioned_profiles": [
+    {
+        "username": "mienfoo.eth"
+    }
+]
+The mention detection logic should be:
+javascript
+Copy code
+const isMentioned = data.mentioned_profiles.some(
+    (profile) => profile.username === 'mienfoo.eth'
+);
+Log this check:
+javascript
+Copy code
+console.log('Mention Detected:', isMentioned);
+2. Verify API Actions
+Ensure the bot is attempting to reply, like, or recast when a mention is detected. Add logs before each API call:
+javascript
+Copy code
+console.log('Replying to cast:', hash);
+await replyToCast(hash, 'Hello from Mienfoo!');
+console.log('Reply sent!');
+
+console.log('Liking the cast:', hash);
+await likeCast(hash);
+console.log('Cast liked!');
+
+console.log('Recasting the cast:', hash);
+await recastCast(hash);
+console.log('Cast recasted!');
+If the logs confirm the actions are being triggered, check the API response for each action.
+3. Inspect API Calls
+If the bot uses Farcaster’s API directly, ensure the following for each call:
+The Authorization header includes the API key:
+javascript
+Copy code
+headers: {
+    Authorization: `Bearer ${process.env.API_KEY}`,
+    'Content-Type': 'application/json'
+}
+Log the full API response:
+javascript
+Copy code
+console.log('API Response:', await response.json());
+Check for errors like Unauthorized, Invalid Input, or Rate Limited.
+4. Test the Bot’s Response Manually
+Use curl or Postman to test the API endpoints manually with the same payload:
+bash
+Copy code
+curl -X POST -H "Authorization: Bearer <API_KEY>" \
+-H "Content-Type: application/json" \
+-d '{"text": "Hello from Mienfoo!"}' \
+https://hub-http-api.neynar.com/v2/casts
+If this works manually, the issue is likely within the bot's logic or how it's calling the API.
+5. Debug Replit Environment
+Ensure the API key is set correctly in Replit:
+javascript
+Copy code
+console.log('API Key:', process.env.API_KEY);
+Check that all dependencies (e.g., fetch) are installed and functional:
+bash
+Copy code
+npm install node-fetch
