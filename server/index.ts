@@ -5,37 +5,46 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Validate required environment variables
-const requiredEnvVars = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'] as const;
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    console.error(`Missing required environment variable: ${envVar}`);
+// Environment validation function
+function checkEnvironment() {
+  const required = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'] as const;
+  const missing = required.filter(key => !process.env[key]);
+  
+  if (missing.length > 0) {
+    console.error('❌ Missing required environment variables:', missing);
     process.exit(1);
   }
+
+  console.log('✓ Environment variables verified:', {
+    hasNeynarKey: !!process.env.NEYNAR_API_KEY,
+    hasSignerUuid: !!process.env.SIGNER_UUID,
+    hasWebhookSecret: !!process.env.WEBHOOK_SECRET,
+    port: process.env.PORT || 5000
+  });
 }
+
+// Run environment check
+checkEnvironment();
 
 // Initialize Express and middleware
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client with v2 configuration
-const neynarClient = new NeynarAPIClient({ 
+// Initialize Neynar client
+const neynar = new NeynarAPIClient({ 
   apiKey: process.env.NEYNAR_API_KEY || '',
-  configuration: {
-    baseOptions: {
-      headers: {
-        "x-neynar-api-key": process.env.NEYNAR_API_KEY || ''
-      }
-    }
-  }
 });
+
+// Log successful initialization
+console.log('Neynar client initialized');
 
 // Test cast function
 async function testCast() {
   try {
-    const response = await neynarClient.publishCast({
-      signerUuid: process.env.SIGNER_UUID!,
+    console.log('Attempting to send test cast...');
+    const response = await neynar.publishCast({
+      signerUuid: process.env.SIGNER_UUID || '',
       text: "🎭 Testing Collectors Canyon Bot! #CollectorsWelcome",
       channelId: "collectorscanyon"
     });
@@ -113,14 +122,14 @@ app.post('/webhook', async (req, res) => {
         console.log('Bot mentioned by:', payload.cast.author.username);
         
         // Add like reaction
-        await neynarClient.publishReaction({
+        await neynar.publishReaction({
           signerUuid: process.env.SIGNER_UUID || '',
           reactionType: 'like',
           target: payload.cast.hash
         });
         
         // Reply in collectors canyon channel
-        await neynarClient.publishCast({
+        await neynar.publishCast({
           signerUuid: process.env.SIGNER_UUID || '',
           text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
           channelId: 'collectorscanyon'
