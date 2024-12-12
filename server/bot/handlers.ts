@@ -1,6 +1,7 @@
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from '../config';
 import { generateBotResponse } from './openai';
+import { analyzeImage, generateImageResponse } from './vision';
 
 const neynar = new NeynarAPIClient({ 
   apiKey: config.NEYNAR_API_KEY
@@ -63,10 +64,33 @@ async function handleMention(cast: any) {
       target: cast.hash
     });
 
-    // Generate and send response
-    const cleanedMessage = cast.text.replace(new RegExp(`@${config.BOT_USERNAME}`, 'i'), '').trim();
-    const response = await generateBotResponse(cleanedMessage);
+    // Check if the cast has an image
+    const hasImage = cast.attachments && cast.attachments.length > 0;
+    let response;
+
+    if (hasImage) {
+        console.log('Cast contains image(s), analyzing...');
+        const imageUrl = cast.attachments[0].url;
+        const imageAnalysis = await analyzeImage(imageUrl);
+        
+        if (imageAnalysis) {
+            response = generateImageResponse(imageAnalysis);
+            console.log('Generated image-based response:', response);
+        } else {
+            // Fallback to text-based response if image analysis fails
+            const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+            response = await generateBotResponse(cleanedMessage);
+        }
+    } else {
+        // Regular text-based response
+        const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+        console.log('Generating response for cleaned message:', cleanedMessage);
+        response = await generateBotResponse(cleanedMessage);
+    }
     
+    console.log('Generated response:', response);
+    
+
     await neynar.publishCast({
       signerUuid: config.SIGNER_UUID,
       text: `@${cast.author.username} ${response}`,
@@ -105,6 +129,7 @@ export async function engageWithChannelContent() {
     
     // Get recent casts from the channel
     const response = await neynar.fetchFeed({
+      feedType: "filter",
       filterType: "channel",
       channelId: "collectorscanyon",
       limit: 20
@@ -209,7 +234,8 @@ function isCollectionRelatedContent(text: string): boolean {
   const hasCollectionType = collectionTypes.some(type => text.includes(type));
   
   // Content should either have a high-priority keyword or combine a collection type with value-related terms
-  return hasHighPriority || (hasCollectionType && text.match(/rare|value|worth|price|grade|condition/));
+  const hasValueTerms = !!text.match(/rare|value|worth|price|grade|condition/);
+  return hasHighPriority || (hasCollectionType && hasValueTerms);
 }
 
 function getEngagementType(text: string): 'high' | 'medium' | 'low' {

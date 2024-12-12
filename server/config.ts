@@ -11,7 +11,8 @@ const configSchema = z.object({
   PORT: z.number().default(5000),
   BOT_USERNAME: z.string().default('mienfoo'),
   BOT_FID: z.string().default('834885'),
-  OPENAI_API_KEY: z.string().min(1, "OpenAI API key is required")
+  OPENAI_API_KEY: z.string().min(1, "OpenAI API key is required"),
+  GOOGLE_VISION_CREDENTIALS: z.string().min(1, "Google Vision credentials are required")
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -25,7 +26,8 @@ function validateConfig(env: NodeJS.ProcessEnv): Config {
       PORT: env.PORT ? parseInt(env.PORT, 10) : 5000,
       BOT_USERNAME: env.BOT_USERNAME || 'mienfoo',
       BOT_FID: env.BOT_FID || '834885',
-      OPENAI_API_KEY: env.OPENAI_API_KEY
+      OPENAI_API_KEY: env.OPENAI_API_KEY,
+      GOOGLE_VISION_CREDENTIALS: env.GOOGLE_VISION_CREDENTIALS || './temporal-trees-444519-p3-76a66e099c80.json'
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
