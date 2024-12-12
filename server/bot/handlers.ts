@@ -216,42 +216,20 @@ export async function handleWebhook(event: any) {
       timestamp: new Date().toISOString()
     });
 
-    // Check for bot mentions and collector mentions
-    const text = cast.text?.toLowerCase() || '';
-    const isBotMentioned = (
+    // Check for bot mentions
+    const isMentioned = (
       cast.mentioned_profiles?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
-      text.includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
-      text.includes('@mienfoo.eth')
+      cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
+      cast.text?.toLowerCase().includes('@mienfoo.eth')
     );
-    const isCollectorMentioned = text.includes('@collectorscanyon.eth');
 
-    // Enhanced logging for mention detection
-    console.log('Enhanced mention detection:', {
-      hash: cast.hash,
-      text: cast.text,
-      lowercase_text: text,
-      isBotMentioned,
-      isCollectorMentioned,
-      mentioned_profiles: cast.mentioned_profiles,
-      bot_fid: config.BOT_FID,
-      bot_username: config.BOT_USERNAME
-    });
-
-    // Process mentions - handle collector mentions independently
-    if (isCollectorMentioned) {
-      console.log('Processing collector mention:', {
+    if (isMentioned) {
+      console.log('Processing mention:', {
         hash: cast.hash,
-        author: cast.author?.username,
+        author: cast.author.username,
         text: cast.text
       });
-      await handleMention(cast, true);  // true indicates collector mention
-    } else if (isBotMentioned) {
-      console.log('Processing bot mention:', {
-        hash: cast.hash,
-        author: cast.author?.username,
-        text: cast.text
-      });
-      await handleMention(cast, false);  // false indicates direct bot mention
+      await handleMention(cast);
     }
 
   } catch (error) {
@@ -280,7 +258,7 @@ async function isBotMessageInChain(castHash: string, depth: number = 0): Promise
   }
 }
 
-async function handleMention(cast: any, isCollectorMention: boolean = false) {
+async function handleMention(cast: any) {
   try {
     const timestamp = new Date().toISOString();
     const castHash = cast.hash;
@@ -300,9 +278,8 @@ async function handleMention(cast: any, isCollectorMention: boolean = false) {
       timestamp,
       hash: castHash,
       threadHash: cast.thread_hash,
-      author: cast.author?.username,
-      text: cast.text,
-      isCollectorMention
+      author: cast.author.username,
+      text: cast.text
     });
 
     // Track this mention immediately
@@ -310,20 +287,6 @@ async function handleMention(cast: any, isCollectorMention: boolean = false) {
     
     // Cleanup after 10 minutes
     setTimeout(() => processedCastHashes.delete(castHash), 10 * 60 * 1000);
-
-    // Like the mention regardless of type
-    console.log(`Attempting to like ${isCollectorMention ? 'collector' : 'bot'} mention:`, castHash);
-    try {
-      const reaction = await neynar.publishReaction({
-        signerUuid: config.SIGNER_UUID,
-        reactionType: 'like',
-        target: castHash
-      });
-      console.log('Successfully liked the mention:', reaction);
-    } catch (error) {
-      console.error('Error liking mention:', error instanceof Error ? error.message : error);
-      // Continue with reply even if like fails
-    }
 
     // Like the mention
     console.log('Attempting to like cast:', castHash);
@@ -395,25 +358,10 @@ async function handleMention(cast: any, isCollectorMention: boolean = false) {
   }
 }
 
-async function generateTextResponse(text: string, isCollectorMention: boolean = false): Promise<string> {
+async function generateTextResponse(text: string): Promise<string> {
   const cleanedMessage = text.replace(/@[\w.]+/g, '').trim();
-  console.log('Generating response for cleaned message:', {
-    original: text,
-    cleaned: cleanedMessage,
-    isCollectorMention,
-    timestamp: new Date().toISOString()
-  });
-
-  let contextualPrompt;
-  if (isCollectorMention) {
-    // Enhanced collector-specific context
-    contextualPrompt = `As Mienfoo, the wise collector's companion and loyal friend of CollectorsCanyon, I'm responding to: ${cleanedMessage}. Share collector's wisdom and enthusiasm while maintaining a helpful, knowledgeable tone. Focus on the collection aspects and community engagement.`;
-  } else {
-    contextualPrompt = cleanedMessage;
-  }
-
-  console.log('Using contextual prompt:', contextualPrompt);
-  return await generateBotResponse(contextualPrompt);
+  console.log('Generating response for cleaned message:', cleanedMessage);
+  return await generateBotResponse(cleanedMessage);
 }
 
 const processedCastHashes = new Set<string>(); // Reintroduced from original code
