@@ -103,15 +103,14 @@ export async function engageWithChannelContent() {
   try {
     console.log('Checking collectors canyon channel for content to engage with');
     
-    // Get recent casts from the channel using the v2 API method
-    const response = await neynar.fetchFeed({ 
-      feedType: 'filter',
-      filterType: 'channel',
-      channelId: 'collectorscanyon',
+    // Get recent casts from the channel
+    const response = await neynar.fetchFeed({
+      filterType: "channel",
+      channelId: "collectorscanyon",
       limit: 20
     });
 
-    if (!response?.casts) {
+    if (!response?.casts || response.casts.length === 0) {
       console.log('No casts found in channel');
       return;
     }
@@ -146,11 +145,24 @@ export async function engageWithChannelContent() {
 
           // For high engagement content, recast as well
           if (engagementLevel === 'high') {
-            await neynar.publishRecast({
+            // Generate an enthusiastic response based on content type
+            let response;
+            if (cast.text.toLowerCase().includes('rare')) {
+              response = `A rare treasure indeed! @${cast.author.username}'s find reminds us that every collection has its gems! 🏺✨`;
+            } else if (cast.text.toLowerCase().includes('grade')) {
+              response = `Wonderful grade on this piece, @${cast.author.username}! Quality is the heart of collecting! 🥋`;
+            } else {
+              response = `Amazing share by @${cast.author.username}! This is what makes our collecting community special! ✨`;
+            }
+
+            // Share the enthusiasm
+            await neynar.publishCast({
               signerUuid: config.SIGNER_UUID,
-              castHash: cast.hash
+              text: response,
+              parent: cast.hash,
+              channelId: 'collectorscanyon'
             });
-            console.log(`Recasted high-engagement content from ${cast.author.username}`);
+            console.log(`Engaged with high-value content from ${cast.author.username}`);
           }
           
           // Add a delay between actions to avoid rate limits
