@@ -34,15 +34,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client
-const neynar = new NeynarAPIClient({
-  apiKey: process.env.NEYNAR_API_KEY || '',
-  baseOptions: {
-    headers: {
-      'api-key': process.env.NEYNAR_API_KEY || '',
-      'Content-Type': 'application/json'
-    }
-  }
+// Initialize Neynar client with proper configuration
+const neynarClient = new NeynarAPIClient({ 
+  apiKey: process.env.NEYNAR_API_KEY || ''
 });
 
 // Webhook signature verification middleware
@@ -96,14 +90,14 @@ app.post('/webhook', verifyWebhookSignature, async (req, res) => {
     if (payload.type === 'cast.created' && payload.cast?.mentions?.some(m => m.fid === process.env.BOT_FID)) {
       try {
         // Add like reaction
-        await neynar.publishReaction({
+        await neynarClient.publishReaction({
           signerUuid: process.env.SIGNER_UUID!,
           reactionType: 'like',
           target: payload.cast.hash
         });
 
         // Reply in collectors canyon channel
-        await neynar.publishCast({
+        await neynarClient.publishCast({
           signerUuid: process.env.SIGNER_UUID!,
           text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
           channelId: 'collectorscanyon'
