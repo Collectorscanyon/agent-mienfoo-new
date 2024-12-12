@@ -8,15 +8,18 @@ const neynar = new NeynarAPIClient({
   apiKey: config.NEYNAR_API_KEY
 });
 
-// Track processed casts using a Map with composite key
-const processedCasts = new Map<string, number>();
+// Track processed threads and responses
+const processedThreads = new Map<string, {
+  lastResponseTime: number;
+  responses: Set<string>;
+}>();
 
 // Cleanup old entries every 5 minutes
 setInterval(() => {
-  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-  for (const [key, timestamp] of processedCasts.entries()) {
-    if (timestamp < fiveMinutesAgo) {
-      processedCasts.delete(key);
+  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+  for (const [threadHash, data] of processedThreads.entries()) {
+    if (data.lastResponseTime < tenMinutesAgo) {
+      processedThreads.delete(threadHash);
     }
   }
 }, 5 * 60 * 1000);
@@ -31,8 +34,37 @@ function isBotMessage(cast: any): boolean {
   );
 }
 
-function createCastKey(cast: any): string {
-  return `${cast.hash}-${cast.parent_hash || 'root'}`;
+function shouldProcessThread(cast: any): boolean {
+  const threadHash = cast.thread_hash;
+  const currentTime = Date.now();
+  
+  // If we haven't seen this thread before
+  if (!processedThreads.has(threadHash)) {
+    processedThreads.set(threadHash, {
+      lastResponseTime: currentTime,
+      responses: new Set([cast.hash])
+    });
+    return true;
+  }
+
+  const threadData = processedThreads.get(threadHash)!;
+  
+  // If we've already processed this exact cast
+  if (threadData.responses.has(cast.hash)) {
+    console.log(`Skipping already processed cast ${cast.hash} in thread ${threadHash}`);
+    return false;
+  }
+
+  // If the last response was too recent (within 30 seconds)
+  if (currentTime - threadData.lastResponseTime < 30 * 1000) {
+    console.log(`Skipping response in thread ${threadHash} - too recent`);
+    return false;
+  }
+
+  // Update thread data and allow processing
+  threadData.responses.add(cast.hash);
+  threadData.lastResponseTime = currentTime;
+  return true;
 }
 
 export async function handleWebhook(event: any) {
@@ -68,19 +100,22 @@ export async function handleWebhook(event: any) {
       return;
     }
 
-    // Check for duplicate cast
-    const castKey = createCastKey(cast);
-    if (processedCasts.has(castKey)) {
-      console.log('Duplicate cast detected, skipping:', {
+    // Enhanced duplicate and thread management
+    if (!shouldProcessThread(cast)) {
+      console.log('Thread management prevented processing:', {
         hash: cast.hash,
-        key: castKey,
-        processedAt: new Date(processedCasts.get(castKey)!).toISOString()
+        thread: cast.thread_hash,
+        timestamp: new Date().toISOString()
       });
       return;
     }
 
-    // Mark as processed immediately
-    processedCasts.set(castKey, Date.now());
+    console.log('Processing new message in thread:', {
+      hash: cast.hash,
+      thread: cast.thread_hash,
+      parent: cast.parent_hash,
+      timestamp: new Date().toISOString()
+    });
 
     console.log('Processing new cast:', {
       hash: cast.hash,

@@ -1,0 +1,61 @@
+ It sounds like the bot is stuck in a loop and repeatedly responding to the same events. This usually happens when your webhook or event listener processes the same message multiple times without a proper deduplication check or self-check. Here’s a step-by-step approach to resolve the issue:
+
+Add Deduplication Using Cast Hashes:
+Keep track of which casts the bot has already processed. Every cast event comes with a unique hash. You can store this hash in a Set or Map in memory:
+
+js
+Copy code
+const processedCasts = new Set();
+
+async function handleWebhookEvent(cast) {
+  // If we’ve seen this cast before, skip it
+  if (processedCasts.has(cast.hash)) {
+    console.log(`Duplicate event detected for cast: ${cast.hash}, ignoring.`);
+    return;
+  }
+
+  // Mark this cast as processed
+  processedCasts.add(cast.hash);
+
+  // Optional cleanup after some time to prevent memory growth
+  setTimeout(() => processedCasts.delete(cast.hash), 10 * 60 * 1000); // after 10 minutes
+
+  // Process the cast here
+  await processCast(cast);
+}
+Check for Self-Messages:
+Make sure the bot isn’t responding to its own messages. If the cast’s author is the same as your bot’s author (e.g., mienfoo.eth), skip responding:
+
+js
+Copy code
+if (cast.author.username === 'mienfoo.eth') {
+  console.log(`Ignoring self-message from ${cast.author.username}`);
+  return;
+}
+Verify You’re Only Responding When Mentioned by Others:
+Make sure you’re filtering events so you only respond when another user mentions your bot. If your bot is reprocessing events where it mentioned someone else (like @collectorscanyon.eth), add a check that verifies the mention came from a different user, not from the bot itself.
+
+Improve Logging:
+Add more detailed logs before and after you process a cast:
+
+js
+Copy code
+console.log('Received event:', JSON.stringify(cast, null, 2));
+This will help you confirm whether multiple identical webhook events are arriving or if your logic is getting called repeatedly due to other conditions.
+
+Check Webhook Configuration:
+Sometimes, webhook endpoints can be called multiple times for the same event. Ensure that:
+
+Your webhook setup is not retrying on success.
+You’re returning the correct status code (e.g., 200) after successfully processing an event.
+Throttle or Debounce:
+If you still face issues, add a short throttle or debounce mechanism. For example, ignore events that arrive too closely together with the same hash or identical text, beyond the first one processed.
+
+Summary:
+
+Implement a Set to track processed cast hashes.
+Ignore casts authored by your own bot.
+Ensure you only respond when another user mentions you.
+Add detailed logging to confirm the flow of events.
+Validate your webhook setup so it’s not sending duplicates.
+By combining these steps, you should be able to stop the bot from continually responding over and over. Once your deduplication and self-checks are rock-solid, you can safely integrate the Google Vision API and further enhance your bot’s responses.
