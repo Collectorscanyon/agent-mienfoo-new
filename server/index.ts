@@ -1,91 +1,76 @@
-import 'dotenv/config';  // Load environment variables first
-import express, { type Request, Response, NextFunction } from "express";
-import cors from "cors";
+import express, { type Request, Response } from "express";
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
-import { NEYNAR_API_KEY, PORT } from "./config";
+import cors from "cors";
+import { config } from './config';
+import { handleMention } from './bot/handlers';
+import { initializeScheduler } from './bot/scheduler';
 
-// Initialize Neynar client with v2 configuration
-const neynarConfig = new Configuration({
-  apiKey: NEYNAR_API_KEY,
-});
-
-const neynar = new NeynarAPIClient(neynarConfig);
-
-// Export neynar client for use in other modules
-export { neynar };
-
-// Initialize Express app
 const app = express();
 
-// Middleware
+// Detailed logging of environment variables (without exposing sensitive data)
+console.log('Environment Check:', {
+  hasApiKey: !!config.NEYNAR_API_KEY,
+  hasSignerUuid: !!config.SIGNER_UUID,
+  port: config.PORT
+});
+
+// Initialize Neynar with proper configuration
+const neynarConfig = new Configuration({
+  apiKey: config.NEYNAR_API_KEY,
+});
+
+export const neynar = new NeynarAPIClient(neynarConfig);
+
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 
-// Request logging middleware
+// Add request logging middleware
 app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
+    headers: req.headers,
+    body: req.body
   });
-
   next();
 });
 
-(async () => {
-  const server = registerRoutes(app);
+// Initialize scheduler for periodic casts
+initializeScheduler();
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
-
+// Webhook endpoint
+app.post('/webhook', async (req: Request, res: Response) => {
   try {
-    const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
-    server.listen(port, "0.0.0.0", () => {
-      log(`🚀 Farcaster bot server running on port ${port}`);
-      log(`🤖 Bot ready to handle mentions and commands`);
+    console.log('Webhook Received:', {
+      type: req.body.type,
+      cast: {
+        text: req.body.cast?.text,
+        authorUsername: req.body.cast?.author?.username,
+        mentions: req.body.cast?.mentions
+      }
     });
+
+    const { type, cast } = req.body;
+
+    // Check for mentions or relevant casts
+    if ((type === 'mention' || type === 'cast.created') && cast?.mentions?.some((m: any) => 
+      m.fid === config.BOT_FID || cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`))) {
+      console.log('Bot mention detected, handling...');
+      await handleMention(cast);
+    }
+
+    res.json({ status: 'success' });
   } catch (error) {
-    console.error("Failed to start server:", error);
-    process.exit(1);
+    console.error('Webhook Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-})().catch((error) => {
-  console.error("Unhandled server error:", error);
-  process.exit(1);
+});
+
+// Test endpoint
+app.get('/test', (_req: Request, res: Response) => {
+  res.json({ message: 'Bot is alive! 🤖' });
+});
+
+// Start server
+app.listen(config.PORT, '0.0.0.0', () => {
+  console.log(`🤖 Server running on port ${config.PORT}`);
+  console.log('🎯 Bot ready to handle mentions and reactions');
 });

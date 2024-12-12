@@ -1,11 +1,11 @@
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
-import { NEYNAR_API_KEY, SIGNER_UUID } from '../config';
+import { config } from '../config';
 
-const config = new Configuration({
-  apiKey: NEYNAR_API_KEY,
+const neynarConfig = new Configuration({
+  apiKey: config.NEYNAR_API_KEY,
 });
 
-const neynar = new NeynarAPIClient(config);
+const neynar = new NeynarAPIClient(neynarConfig);
 
 // Set 8-hour interval for casts to avoid rate limiting
 const CAST_INTERVAL = 8 * 60 * 60 * 1000;
@@ -24,9 +24,11 @@ export async function createDailyCast() {
   try {
     const randomMessage = messages[Math.floor(Math.random() * messages.length)];
     
+    console.log('Creating daily cast:', randomMessage);
     await neynar.publishCast({
       signerUuid: SIGNER_UUID,
-      text: randomMessage
+      text: randomMessage,
+      parent: null // Explicit null for root cast
     });
     
     console.log('Daily cast created successfully');

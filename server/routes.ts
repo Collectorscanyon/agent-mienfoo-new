@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import crypto from 'crypto';
 import { handleMention } from './bot/handlers';
 import { initializeScheduler } from './bot/scheduler';
-import { WEBHOOK_SECRET } from './config';
+import { WEBHOOK_SECRET, BOT_FID, BOT_USERNAME } from './config';
 
 function verifySignature(signature: string, body: string, secret: string): boolean {
   const hmac = crypto.createHmac('sha256', secret);
@@ -25,7 +25,7 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log('Received webhook request:', {
         headers: req.headers,
-        body: req.body
+        body: JSON.stringify(req.body, null, 2)
       });
 
       // Verify webhook signature
@@ -39,18 +39,24 @@ export function registerRoutes(app: Express): Server {
       
       const { type, cast } = req.body;
       
-      console.log('Processing webhook:', { type, cast });
+      console.log('🤖 Processing webhook:', { 
+        type,
+        cast_text: cast?.text,
+        author: cast?.author?.username,
+        mentions: cast?.mentions
+      });
 
       // Handle different webhook events
       switch(type) {
         case 'mention':
-          console.log('Handling mention event');
-          await handleMention(cast);
-          break;
         case 'cast.created':
-          if (cast?.mentions?.includes(process.env.BOT_FID)) {
-            console.log('Handling cast with bot mention');
+          // Check if the cast mentions our bot by FID or username
+          if (cast?.mentions?.includes(BOT_FID) || 
+              cast?.text?.toLowerCase().includes(`@${BOT_USERNAME.toLowerCase()}`)) {
+            console.log('Handling mention event for bot');
             await handleMention(cast);
+          } else {
+            console.log('Cast does not mention bot, ignoring');
           }
           break;
         default:

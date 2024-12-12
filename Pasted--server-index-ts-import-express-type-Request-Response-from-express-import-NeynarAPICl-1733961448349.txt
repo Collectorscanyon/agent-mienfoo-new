@@ -1,0 +1,90 @@
+// server/index.ts
+import express, { type Request, Response } from "express";
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import cors from "cors";
+require('dotenv').config();
+
+const app = express();
+
+// Detailed logging of environment variables (without exposing sensitive data)
+console.log('Environment Check:', {
+  hasApiKey: !!process.env.NEYNAR_API_KEY,
+  hasSignerUuid: !!process.env.SIGNER_UUID,
+  port: process.env.PORT || 5000
+});
+
+// Initialize Neynar with proper configuration
+const neynar = new NeynarAPIClient({ apiKey: process.env.NEYNAR_API_KEY || '' });
+
+app.use(cors());
+app.use(express.json());
+
+// Add request logging middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
+    headers: req.headers,
+    body: req.body
+  });
+  next();
+});
+
+// Webhook endpoint with detailed logging
+app.post('/webhook', async (req: Request, res: Response) => {
+  try {
+    const { type, cast, user } = req.body;
+    console.log('Webhook Received:', {
+      type,
+      cast: {
+        text: cast?.text,
+        authorUsername: cast?.author?.username,
+        mentions: cast?.mentions
+      }
+    });
+
+    // Check for mentions
+    if (type === 'cast.created' && cast?.mentions?.some(m => 
+      m.fid === '834885' || m.fid === '466926')) {
+      console.log('Bot mention detected');
+      
+      try {
+        await neynar.publishCast({
+          signer_uuid: process.env.SIGNER_UUID || '',
+          text: `Hey @${cast.author.username}! 👋`,
+          parent: cast.hash
+        });
+        console.log('Reply sent successfully');
+
+        // Add a like reaction
+        try {
+          await neynar.reactToCast({
+            signer_uuid: process.env.SIGNER_UUID || '',
+            reaction_type: 'like',
+            cast_hash: cast.hash
+          });
+          console.log('Like reaction sent successfully');
+        } catch (likeError) {
+          console.error('Error sending like:', likeError);
+        }
+      } catch (replyError) {
+        console.error('Error sending reply:', replyError);
+      }
+    }
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error('Webhook Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Test endpoint
+app.get('/test', (req: Request, res: Response) => {
+  res.json({ message: 'Bot is alive!' });
+});
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🤖 Server running on port ${PORT}`);
+  console.log('🎯 Bot ready to handle mentions and reactions');
+});
