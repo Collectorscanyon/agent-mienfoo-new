@@ -27,11 +27,24 @@ setInterval(() => {
 function isBotMessage(cast: any): boolean {
   if (!cast?.author) return false;
   
-  return (
+  // Check both the author and message content
+  const isBotAuthor = (
     cast.author.fid?.toString() === config.BOT_FID ||
     cast.author.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
     cast.author.username?.toLowerCase() === 'mienfoo.eth'
   );
+
+  // Add detailed logging
+  console.log('Message author check:', {
+    castHash: cast.hash,
+    authorFid: cast.author.fid,
+    authorUsername: cast.author.username,
+    isBotAuthor,
+    botFid: config.BOT_FID,
+    botUsername: config.BOT_USERNAME
+  });
+
+  return isBotAuthor;
 }
 
 function shouldProcessThread(cast: any): boolean {
@@ -69,12 +82,17 @@ function shouldProcessThread(cast: any): boolean {
 
 export async function handleWebhook(event: any) {
   try {
-    // Log webhook details for debugging
+    const timestamp = new Date().toISOString();
+    
+    // Enhanced webhook logging
     console.log('Webhook request received:', {
-      timestamp: new Date().toISOString(),
-      headers: event.headers,
-      body: event.body,
-      path: event.path
+      timestamp,
+      eventType: event.body?.type,
+      castHash: event.body?.data?.hash,
+      threadHash: event.body?.data?.thread_hash,
+      parentHash: event.body?.data?.parent_hash,
+      author: event.body?.data?.author?.username,
+      text: event.body?.data?.text
     });
 
     if (!event.body?.type || !event.body?.data) {
@@ -90,12 +108,28 @@ export async function handleWebhook(event: any) {
       return;
     }
 
-    // Early exit for bot's own messages
+    // Enhanced bot message detection
     if (isBotMessage(cast)) {
       console.log('Skipping bot\'s own message:', {
+        timestamp,
         hash: cast.hash,
+        threadHash: cast.thread_hash,
         author: cast.author?.username,
-        text: cast.text
+        text: cast.text,
+        reason: 'Bot authored message'
+      });
+      return;
+    }
+
+    // Check if this is a message chain started by the bot
+    const isPartOfBotThread = cast.parent_hash && await isBotMessageInChain(cast.parent_hash);
+    if (isPartOfBotThread) {
+      console.log('Skipping message in bot-initiated thread:', {
+        timestamp,
+        hash: cast.hash,
+        threadHash: cast.thread_hash,
+        parentHash: cast.parent_hash,
+        reason: 'Part of bot conversation'
       });
       return;
     }
@@ -146,8 +180,40 @@ export async function handleWebhook(event: any) {
   }
 }
 
+// Helper function to check if a message is part of a bot-initiated thread
+async function isBotMessageInChain(castHash: string, depth: number = 0): Promise<boolean> {
+  if (depth > 5) return false; // Limit recursion depth
+  
+  try {
+    const cast = await neynar.getCast(castHash);
+    if (!cast) return false;
+    
+    if (isBotMessage(cast)) return true;
+    
+    if (cast.parent_hash) {
+      return await isBotMessageInChain(cast.parent_hash, depth + 1);
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error checking message chain:', error);
+    return false;
+  }
+}
+
 async function handleMention(cast: any) {
   try {
+    const timestamp = new Date().toISOString();
+    
+    // Enhanced mention logging
+    console.log('Processing mention:', {
+      timestamp,
+      hash: cast.hash,
+      threadHash: cast.thread_hash,
+      author: cast.author.username,
+      text: cast.text
+    });
+
     // Like the mention
     console.log('Attempting to like cast:', cast.hash);
     try {
