@@ -1,30 +1,23 @@
 import express from 'express';
-import type { Request, Response, NextFunction } from 'express';
+import bodyParser from 'body-parser';
+import type { Request, Response } from 'express';
 
 const app = express();
+const PORT = 5000;
 
-// Basic middleware setup
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.raw({ type: '*/*' }));
-
-// Request logging middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-    console.log('Incoming request:', {
-        timestamp: new Date().toISOString(),
-        method: req.method,
-        path: req.url,
+// Basic request logging
+app.use((req: Request, res: Response, next) => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`, {
         headers: req.headers,
         body: req.body
     });
     next();
 });
 
-// Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-    console.error('Server error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-});
+// Middleware to parse JSON and form-urlencoded bodies
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
 
 // Health check endpoint
 app.get('/', (_req: Request, res: Response) => {
@@ -34,35 +27,16 @@ app.get('/', (_req: Request, res: Response) => {
 // Webhook endpoint
 app.post('/webhook', (req: Request, res: Response) => {
     try {
-        console.log('Webhook received:', {
-            timestamp: new Date().toISOString(),
-            body: req.body,
-            contentType: req.headers['content-type']
-        });
-        
-        // Always respond with 200 OK
-        res.status(200).send('OK');
+        console.log('Received webhook data:', req.body);
+        res.status(200).json({ message: 'Webhook received successfully' });
     } catch (error) {
         console.error('Webhook error:', error);
         // Still send 200 OK to acknowledge receipt
-        res.status(200).send('OK');
+        res.status(200).json({ message: 'Webhook acknowledged' });
     }
 });
 
-// Parse errors
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-    if (err instanceof SyntaxError) {
-        console.error('Parse error:', err);
-        return res.status(400).json({ error: 'Bad request' });
-    }
-    next(err);
-});
-
-const PORT = process.env.PORT || 5000;
+// Start the server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
-    console.log('Ready to handle webhook requests');
-}).on('error', (error) => {
-    console.error('Server failed to start:', error);
-    process.exit(1);
 });
