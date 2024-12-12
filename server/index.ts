@@ -161,15 +161,7 @@ app.post('/webhook', async (req: Request, res: Response) => {
             }
         }
     } catch (error) {
-        console.error('Webhook processing error:', {
-            timestamp: new Date().toISOString(),
-            error: error instanceof Error ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            } : error,
-            webhookBody: req.body
-        });
+        console.error('Webhook processing error:', error);
         // Already sent 200 OK, just log the error
     }
 });
