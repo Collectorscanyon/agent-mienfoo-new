@@ -22,7 +22,12 @@ app.use(express.json());
 
 // Initialize Neynar client with proper v2 configuration
 const config = new Configuration({
-  apiKey: process.env.NEYNAR_API_KEY || ''
+  apiKey: process.env.NEYNAR_API_KEY || '',
+  baseOptions: {
+    headers: {
+      "x-neynar-api-key": process.env.NEYNAR_API_KEY || ''
+    }
+  }
 });
 
 const neynar = new NeynarAPIClient(config);
@@ -110,7 +115,7 @@ app.post('/webhook', verifyWebhookSignature, async (req, res) => {
     }
   } catch (error) {
     console.error(`[${requestId}] Webhook error:`, error);
-    res.status(500).json({ error: 'Internal server error' });
+    // Don't send error response here since we already sent 200 OK
   }
 });
 
@@ -119,19 +124,19 @@ async function handleMention(cast: WebhookPayload['cast'], requestId: string) {
   
   try {
     // Like the mention
-    await neynar.publishReaction({
-      signerUuid: process.env.SIGNER_UUID!,
-      reactionType: 'like',
-      target: cast.hash
+    await neynar.reactToCast({
+      signer_uuid: process.env.SIGNER_UUID!,
+      reaction_type: 'like',
+      cast_hash: cast.hash
     });
     console.log(`[${requestId}] Liked mention from @${cast.author.username}`);
 
     // Reply to mention
     await neynar.publishCast({
-      signerUuid: process.env.SIGNER_UUID!,
+      signer_uuid: process.env.SIGNER_UUID!,
       text: `Hey @${cast.author.username}! 👋 Let's talk about collectibles! #CollectorsCanyonClub`,
       parent: cast.hash,
-      channelId: 'collectorscanyon'
+      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
     });
     console.log(`[${requestId}] Replied to @${cast.author.username}`);
   } catch (error) {
