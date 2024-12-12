@@ -1,0 +1,112 @@
+Neynar Server Implementation
+
+import express from 'express';
+import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
+import crypto from 'crypto';
+import cors from 'cors';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+// Type definitions
+interface WebhookPayload {
+  type: string;
+  castHash?: string;
+  text?: string;
+  author: {
+    username: string;
+  }
+}
+
+// Validate required environment variables
+const requiredEnvVars = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'] as const;
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
+
+// Initialize Neynar client with v2 configuration
+const config = new Configuration({
+  apiKey: process.env.NEYNAR_API_KEY,
+  webhookSecret: process.env.WEBHOOK_SECRET
+});
+
+const neynar = new NeynarAPIClient(config);
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Webhook signature verification middleware
+const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const signature = req.headers['x-neynar-signature'];
+  
+  if (!signature || typeof signature !== 'string') {
+    return res.status(401).json({ error: 'Missing signature' });
+  }
+
+  const hmac = crypto
+    .createHmac('sha256', process.env.WEBHOOK_SECRET!)
+    .update(JSON.stringify(req.body))
+    .digest('hex');
+
+  if (`sha256=${hmac}` !== signature) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  next();
+};
+
+// Webhook endpoint
+app.post('/webhook', verifyWebhookSignature, async (req, res) => {
+  try {
+    const payload = req.body as WebhookPayload;
+    console.log('Received webhook:', { timestamp: new Date().toISOString(), payload });
+    
+    // Send immediate response
+    res.status(200).send('OK');
+    
+    // Process webhook asynchronously
+    await handleWebhook(payload);
+  } catch (error) {
+    console.error('Webhook error:', error);
+    // Already sent 200, just log the error
+  }
+});
+
+async function handleWebhook(payload: WebhookPayload) {
+  try {
+    if (payload.type === 'CAST') {
+      await handleCast(payload);
+    }
+  } catch (error) {
+    console.error('Error handling webhook:', error);
+  }
+}
+
+async function handleCast(payload: WebhookPayload) {
+  try {
+    if (!payload.text || !payload.author.username) return;
+    
+    // Example: Publish a reaction to the cast
+    if (payload.castHash) {
+      await neynar.publishReaction({
+        signerUuid: process.env.SIGNER_UUID!,
+        reactionType: 'like',
+        castHash: payload.castHash
+      });
+      console.log('Successfully liked cast');
+    }
+  } catch (error) {
+    console.error('Error handling cast:', error);
+  }
+}
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+}).on('error', (error) => {
+  console.error('Server failed to start:', error);
+  process.exit(1);
+});

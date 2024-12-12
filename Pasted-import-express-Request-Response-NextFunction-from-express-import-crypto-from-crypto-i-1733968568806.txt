@@ -1,0 +1,143 @@
+import express, { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+
+// Environment variable type checking
+const requiredEnvVars = ['NEYNAR_API_KEY', 'NEYNAR_WEBHOOK_SECRET'] as const;
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
+
+// Initialize Neynar client with proper error handling
+const neynar = new NeynarAPIClient({
+  apiKey: process.env.NEYNAR_API_KEY || ''
+});
+
+// Webhook payload types
+interface WebhookPayload {
+  type: 'REACTION' | 'CAST';
+  timestamp: string;
+  data: ReactionPayload | CastPayload;
+}
+
+interface ReactionPayload {
+  type: 'like';
+  signerUuid: string;
+  castHash: string;
+}
+
+interface CastPayload {
+  hash: string;
+  signerUuid: string;
+  text: string;
+}
+
+// Middleware for webhook signature verification
+const verifyWebhookSignature = (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const signature = req.headers['x-neynar-signature'];
+    if (!signature || typeof signature !== 'string') {
+      console.error('Missing or invalid webhook signature');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    const payload = JSON.stringify(req.body);
+    const hmac = crypto
+      .createHmac('sha256', process.env.NEYNAR_WEBHOOK_SECRET!)
+      .update(payload)
+      .digest('hex');
+
+    if (signature !== `sha256=${hmac}`) {
+      console.error('Webhook signature verification failed');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error verifying webhook signature:', error);
+    res.status(500).json({ error: 'Internal server error during signature verification' });
+  }
+};
+
+// Error logging middleware
+const errorLogger = (err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Webhook Error:', {
+    timestamp: new Date().toISOString(),
+    error: err.message,
+    stack: err.stack,
+    body: req.body,
+    headers: req.headers
+  });
+  next(err);
+};
+
+// Webhook route handler
+const app = express();
+app.use(express.json());
+app.use('/webhook', errorLogger);
+
+app.post('/webhook', verifyWebhookSignature, async (req: Request, res: Response) => {
+  try {
+    const payload = req.body as WebhookPayload;
+    console.log('Received webhook:', {
+      type: payload.type,
+      timestamp: payload.timestamp,
+      data: payload.data
+    });
+
+    // Send immediate acknowledgment
+    res.status(200).send('OK');
+
+    // Process webhook asynchronously
+    await processWebhook(payload);
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    // Don't send error response here since we already sent 200 OK
+  }
+});
+
+async function processWebhook(payload: WebhookPayload) {
+  try {
+    switch (payload.type) {
+      case 'REACTION':
+        const reactionData = payload.data as ReactionPayload;
+        await handleReaction(reactionData);
+        break;
+      case 'CAST':
+        const castData = payload.data as CastPayload;
+        await handleCast(castData);
+        break;
+      default:
+        console.warn('Unknown webhook type:', payload.type);
+    }
+  } catch (error) {
+    console.error('Error in webhook processing:', error);
+  }
+}
+
+async function handleReaction(data: ReactionPayload) {
+  try {
+    // Add your reaction handling logic here
+    console.log('Processing reaction:', data);
+  } catch (error) {
+    console.error('Error handling reaction:', error);
+  }
+}
+
+async function handleCast(data: CastPayload) {
+  try {
+    // Add your cast handling logic here
+    console.log('Processing cast:', data);
+  } catch (error) {
+    console.error('Error handling cast:', error);
+  }
+}
+
+// Start server with proper error handling
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+}).on('error', (error) => {
+  console.error('Server failed to start:', error);
