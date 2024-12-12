@@ -1,5 +1,5 @@
 import express from 'express';
-import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import crypto from 'crypto';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -20,17 +20,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client with proper v2 configuration
-const config = new Configuration({
-  apiKey: process.env.NEYNAR_API_KEY || '',
-  baseOptions: {
-    headers: {
-      "x-neynar-api-key": process.env.NEYNAR_API_KEY || ''
-    }
-  }
+// Initialize Neynar client with proper configuration
+const neynar = new NeynarAPIClient({ 
+  apiKey: process.env.NEYNAR_API_KEY || '' 
 });
-
-const neynar = new NeynarAPIClient(config);
 
 // Type definitions for webhook payload
 interface WebhookPayload {
@@ -123,24 +116,27 @@ async function handleMention(cast: WebhookPayload['cast'], requestId: string) {
   if (!cast) return;
   
   try {
+    console.log(`[${requestId}] Processing mention from @${cast.author.username}`);
+    
     // Like the mention
-    await neynar.reactToCast({
-      signer_uuid: process.env.SIGNER_UUID!,
-      reaction_type: 'like',
-      cast_hash: cast.hash
+    await neynar.publishReaction({
+      signerUuid: process.env.SIGNER_UUID!,
+      reactionType: 'like',
+      target: cast.hash
     });
     console.log(`[${requestId}] Liked mention from @${cast.author.username}`);
 
     // Reply to mention
     await neynar.publishCast({
-      signer_uuid: process.env.SIGNER_UUID!,
+      signerUuid: process.env.SIGNER_UUID!,
       text: `Hey @${cast.author.username}! 👋 Let's talk about collectibles! #CollectorsCanyonClub`,
       parent: cast.hash,
-      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+      channelId: 'collectorscanyon'
     });
     console.log(`[${requestId}] Replied to @${cast.author.username}`);
   } catch (error) {
     console.error(`[${requestId}] Error handling mention:`, error);
+    throw error;
   }
 }
 
