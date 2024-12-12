@@ -225,23 +225,33 @@ export async function handleWebhook(event: any) {
     );
     const isCollectorMentioned = text.includes('@collectorscanyon.eth');
 
-    // Log mention details
-    console.log('Mention detection:', {
+    // Enhanced logging for mention detection
+    console.log('Enhanced mention detection:', {
       hash: cast.hash,
+      text: cast.text,
+      lowercase_text: text,
       isBotMentioned,
       isCollectorMentioned,
-      text: cast.text
+      mentioned_profiles: cast.mentioned_profiles,
+      bot_fid: config.BOT_FID,
+      bot_username: config.BOT_USERNAME
     });
 
-    if (isBotMentioned || isCollectorMentioned) {
-      console.log('Processing mention:', {
+    // Process mentions - handle collector mentions independently
+    if (isCollectorMentioned) {
+      console.log('Processing collector mention:', {
         hash: cast.hash,
-        author: cast.author.username,
-        text: cast.text,
-        botMentioned: isBotMentioned,
-        collectorMentioned: isCollectorMentioned
+        author: cast.author?.username,
+        text: cast.text
       });
-      await handleMention(cast, isCollectorMentioned);
+      await handleMention(cast, true);  // true indicates collector mention
+    } else if (isBotMentioned) {
+      console.log('Processing bot mention:', {
+        hash: cast.hash,
+        author: cast.author?.username,
+        text: cast.text
+      });
+      await handleMention(cast, false);  // false indicates direct bot mention
     }
 
   } catch (error) {
@@ -290,8 +300,9 @@ async function handleMention(cast: any, isCollectorMention: boolean = false) {
       timestamp,
       hash: castHash,
       threadHash: cast.thread_hash,
-      author: cast.author.username,
-      text: cast.text
+      author: cast.author?.username,
+      text: cast.text,
+      isCollectorMention
     });
 
     // Track this mention immediately
@@ -299,6 +310,20 @@ async function handleMention(cast: any, isCollectorMention: boolean = false) {
     
     // Cleanup after 10 minutes
     setTimeout(() => processedCastHashes.delete(castHash), 10 * 60 * 1000);
+
+    // Like the mention regardless of type
+    console.log(`Attempting to like ${isCollectorMention ? 'collector' : 'bot'} mention:`, castHash);
+    try {
+      const reaction = await neynar.publishReaction({
+        signerUuid: config.SIGNER_UUID,
+        reactionType: 'like',
+        target: castHash
+      });
+      console.log('Successfully liked the mention:', reaction);
+    } catch (error) {
+      console.error('Error liking mention:', error instanceof Error ? error.message : error);
+      // Continue with reply even if like fails
+    }
 
     // Like the mention
     console.log('Attempting to like cast:', castHash);
@@ -375,16 +400,20 @@ async function generateTextResponse(text: string, isCollectorMention: boolean = 
   console.log('Generating response for cleaned message:', {
     original: text,
     cleaned: cleanedMessage,
-    isCollectorMention
+    isCollectorMention,
+    timestamp: new Date().toISOString()
   });
 
+  let contextualPrompt;
   if (isCollectorMention) {
-    // Add collector-specific context to the message
-    const collectorContext = "As Mienfoo, loyal friend of CollectorsCanyon, sharing wisdom about collecting: ";
-    return await generateBotResponse(collectorContext + cleanedMessage);
+    // Enhanced collector-specific context
+    contextualPrompt = `As Mienfoo, the wise collector's companion and loyal friend of CollectorsCanyon, I'm responding to: ${cleanedMessage}. Share collector's wisdom and enthusiasm while maintaining a helpful, knowledgeable tone. Focus on the collection aspects and community engagement.`;
+  } else {
+    contextualPrompt = cleanedMessage;
   }
-  
-  return await generateBotResponse(cleanedMessage);
+
+  console.log('Using contextual prompt:', contextualPrompt);
+  return await generateBotResponse(contextualPrompt);
 }
 
 const processedCastHashes = new Set<string>(); // Reintroduced from original code
