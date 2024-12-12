@@ -79,11 +79,19 @@ const webhookHandler = async (req: Request | VercelRequest, res: Response | Verc
     // Extract and validate webhook data
     const { type, data } = req.body;
 
+    console.log('Webhook payload:', {
+      timestamp,
+      type,
+      data: JSON.stringify(data, null, 2),
+      rawBody: (req as any).rawBody
+    });
+
     if (!type || !data) {
       console.warn('Missing required fields:', {
         timestamp,
         type,
-        hasData: !!data
+        hasData: !!data,
+        body: req.body
       });
       return res.json({
         success: false,
@@ -91,15 +99,6 @@ const webhookHandler = async (req: Request | VercelRequest, res: Response | Verc
         message: 'Request must include "type" and "data" fields'
       });
     }
-
-    // Extract and validate webhook data
-    const { type, data } = req.body;
-    
-    console.log('Webhook payload:', {
-      timestamp,
-      type,
-      data: JSON.stringify(data, null, 2)
-    });
 
     // Handle Farcaster cast.created events
     if (type === 'cast.created' && data) {
