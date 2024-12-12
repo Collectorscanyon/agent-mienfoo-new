@@ -10,7 +10,8 @@ const configSchema = z.object({
   WEBHOOK_SECRET: z.string().min(1, "Webhook secret is required"),
   PORT: z.number().default(5000),
   BOT_USERNAME: z.string().default('mienfoo'),
-  BOT_FID: z.string().default('834885')
+  BOT_FID: z.string().default('834885'),
+  OPENAI_API_KEY: z.string().min(1, "OpenAI API key is required")
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -23,7 +24,8 @@ function validateConfig(env: NodeJS.ProcessEnv): Config {
       WEBHOOK_SECRET: env.WEBHOOK_SECRET,
       PORT: env.PORT ? parseInt(env.PORT, 10) : 5000,
       BOT_USERNAME: env.BOT_USERNAME || 'mienfoo',
-      BOT_FID: env.BOT_FID || '834885'
+      BOT_FID: env.BOT_FID || '834885',
+      OPENAI_API_KEY: env.OPENAI_API_KEY
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

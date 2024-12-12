@@ -1,9 +1,16 @@
 import OpenAI from 'openai';
 import { config } from '../config';
 
-const openai = new OpenAI({
-  apiKey: config.OPENAI_API_KEY
-});
+let openai: OpenAI;
+try {
+  openai = new OpenAI({
+    apiKey: config.OPENAI_API_KEY
+  });
+  console.log('OpenAI client initialized successfully');
+} catch (error) {
+  console.error('Failed to initialize OpenAI client:', error);
+  process.exit(1);
+}
 
 const BASE_PROMPT = `You are Mienfoo, the wise and enthusiastic collector bot and guardian of CollectorsCanyon.
 Your personality:
@@ -64,17 +71,38 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
 
     console.log('Generated response:', formattedResponse);
     return formattedResponse;
-  } catch (error) {
-    console.error('OpenAI Error:', error);
-    if (error instanceof Error) {
-      console.error('Error details:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
-    }
+  } catch (error: any) {
+    console.error('OpenAI Error:', {
+      name: error.name,
+      message: error.message,
+      status: error.response?.status,
+      timestamp: new Date().toISOString()
+    });
+
+    // Create engaging fallback responses based on error type
+    const fallbackResponses = {
+      rateLimit: [
+        "🥋 Even a wise collector needs rest! Tell me about your collection while I meditate. #CollectorsCanyonClub",
+        "📜 Ancient wisdom says: take breaks to appreciate what you have! Share your latest find? #CollectorsCanyonClub",
+        "⏳ Taking a brief pause to center my chi! What treasures have you discovered lately? #CollectorsCanyonClub"
+      ],
+      default: [
+        "🎭 A collector's journey is full of surprises! What brings you to our canyon today? #CollectorsCanyonClub",
+        "🌟 Every item tells a story! Care to share yours with this old collector? #CollectorsCanyonClub",
+        "🏺 In my years of collecting, I've learned that conversation is the greatest treasure! #CollectorsCanyonClub"
+      ]
+    };
+
+    // Select random response based on error type
+    const responses = error.response?.status === 429 
+      ? fallbackResponses.rateLimit 
+      : fallbackResponses.default;
     
-    // Provide a personality-appropriate fallback response
-    return "Ah, this old collector's mind needs a moment to focus! 🥋 Why don't you tell me about your latest find while I recharge? #CollectorsCanyonClub";
+    const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+    
+    // Log the selected fallback response
+    console.log('Using fallback response:', randomResponse);
+    
+    return randomResponse;
   }
 }
