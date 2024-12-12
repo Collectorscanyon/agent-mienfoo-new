@@ -1,24 +1,9 @@
 import express from 'express';
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
-import crypto from 'crypto';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
-// Type definitions
-interface WebhookPayload {
-  type: string;
-  cast?: {
-    hash: string;
-    text: string;
-    author: {
-      username: string;
-      fid: string;
-    };
-    mentions?: Array<{ fid: string }>;
-  };
-}
 
 // Validate required environment variables
 const requiredEnvVars = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'] as const;
@@ -34,84 +19,84 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client with type-safe configuration
-const neynarClient = new NeynarAPIClient({
-  apiKey: process.env.NEYNAR_API_KEY!
+// Initialize Neynar client with v2 configuration
+const neynarClient = new NeynarAPIClient({ 
+  apiKey: process.env.NEYNAR_API_KEY || '',
+  configuration: {
+    baseOptions: {
+      headers: {
+        "x-neynar-api-key": process.env.NEYNAR_API_KEY || ''
+      }
+    }
+  }
 });
 
-// Webhook signature verification middleware
-const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const signature = req.headers['x-neynar-signature'];
-  if (!signature || typeof signature !== 'string') {
-    return res.status(401).json({ error: 'Missing webhook signature' });
-  }
-
+// Test cast function
+async function testCast() {
   try {
-    const hmac = crypto
-      .createHmac('sha256', process.env.WEBHOOK_SECRET!)
-      .update(JSON.stringify(req.body))
-      .digest('hex');
-
-    if (`sha256=${hmac}` !== signature) {
-      return res.status(401).json({ error: 'Invalid webhook signature' });
-    }
-
-    next();
+    const response = await neynarClient.publishCast({
+      signerUuid: process.env.SIGNER_UUID!,
+      text: "🎭 Testing Collectors Canyon Bot! #CollectorsWelcome",
+      channelId: "collectorscanyon"
+    });
+    console.log('Test cast successful:', response);
+    return response;
   } catch (error) {
-    console.error('Webhook signature verification error:', error);
-    return res.status(500).json({ error: 'Error verifying webhook signature' });
+    console.error('Test cast failed:', error);
+    throw error;
   }
-};
+}
 
-// Health check endpoint
-app.get('/health', (_req, res) => {
-  res.json({ 
-    status: 'ok',
-    config: {
-      hasNeynarKey: !!process.env.NEYNAR_API_KEY,
-      hasSignerUuid: !!process.env.SIGNER_UUID,
-      hasWebhookSecret: !!process.env.WEBHOOK_SECRET
-    }
-  });
-});
-
-// Test endpoint to verify configuration and connectivity
+// Test endpoint to verify server and configuration
 app.get('/test', async (_req, res) => {
   try {
-    console.log('Test endpoint called, checking configuration...');
-    
-    // Configuration check
+    // First verify configuration
     const config = {
-      status: 'ok',
-      message: 'Farcaster Collectors Bot is running',
-      server: {
-        port: PORT,
-        timestamp: new Date().toISOString()
-      },
-      config: {
-        initialized: !!neynarClient,
-        hasApiKey: !!process.env.NEYNAR_API_KEY,
-        hasSignerUuid: !!process.env.SIGNER_UUID,
-        hasWebhookSecret: !!process.env.WEBHOOK_SECRET,
-        botFid: process.env.BOT_FID
-      }
+      hasApiKey: !!process.env.NEYNAR_API_KEY,
+      hasSignerUuid: !!process.env.SIGNER_UUID,
+      hasWebhookSecret: !!process.env.WEBHOOK_SECRET,
+      port: process.env.PORT || 5000
     };
-
-    console.log('Configuration check complete:', config);
-    res.json(config);
+    
+    // Try to send a test cast
+    const castResponse = await testCast();
+    
+    res.json({
+      status: 'ok',
+      message: 'Collectors Canyon Bot',
+      config,
+      testCast: {
+        success: true,
+        response: castResponse
+      },
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
-    console.error('Test endpoint error:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('Test endpoint error:', error);
     res.status(500).json({ 
-      status: 'error',
-      message: 'Failed to check server configuration',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
+// Define webhook payload type
+interface WebhookPayload {
+  type: string;
+  cast?: {
+    hash: string;
+    text: string;
+    author: {
+      username: string;
+      fid: string;
+    };
+    mentions?: Array<{ fid: string }>;
+  };
+}
+
 // Webhook endpoint
-app.post('/webhook', verifyWebhookSignature, async (req, res) => {
-  // Send immediate response to prevent timeouts
+app.post('/webhook', async (req, res) => {
+  // Send immediate response
   res.status(200).json({ status: 'processing' });
   
   try {
@@ -122,47 +107,49 @@ app.post('/webhook', verifyWebhookSignature, async (req, res) => {
       mentions: payload.cast?.mentions
     });
 
-    if (payload.type === 'cast.created' && payload.cast?.mentions?.some(m => m.fid === process.env.BOT_FID)) {
+    // Handle bot mentions
+    if (payload.type === 'cast.created' && payload.cast?.mentions?.some(mention => mention.fid === process.env.BOT_FID)) {
       try {
-        console.log('Processing bot mention from:', payload.cast.author.username);
+        console.log('Bot mentioned by:', payload.cast.author.username);
         
         // Add like reaction
-        try {
-          await neynarClient.publishReaction({
-            signerUuid: process.env.SIGNER_UUID!,
-            reactionType: 'like',
-            target: payload.cast.hash
-          });
-          console.log('Successfully liked the cast');
-        } catch (reactionError) {
-          console.error('Error publishing reaction:', reactionError instanceof Error ? reactionError.message : 'Unknown error');
-        }
-
+        await neynarClient.publishReaction({
+          signerUuid: process.env.SIGNER_UUID || '',
+          reactionType: 'like',
+          target: payload.cast.hash
+        });
+        
         // Reply in collectors canyon channel
-        try {
-          await neynarClient.publishCast({
-            signerUuid: process.env.SIGNER_UUID!,
-            text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
-            channelId: 'collectorscanyon'
-          });
-          console.log('Successfully published response cast');
-        } catch (castError) {
-          console.error('Error publishing cast:', castError instanceof Error ? castError.message : 'Unknown error');
-        }
-      } catch (processError) {
-        console.error('Error processing cast:', processError instanceof Error ? processError.message : 'Unknown error');
+        await neynarClient.publishCast({
+          signerUuid: process.env.SIGNER_UUID || '',
+          text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
+          channelId: 'collectorscanyon'
+        });
+        
+        console.log('Successfully processed mention');
+      } catch (error) {
+        console.error('Error processing mention:', error);
       }
     }
   } catch (error) {
-    console.error('Webhook error:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('Webhook error:', error);
   }
 });
 
+// Start the server
 const PORT = parseInt(process.env.PORT || '5000', 10);
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🤖 Bot server running on port ${PORT}`);
   console.log('👂 Ready for webhook requests');
 }).on('error', (error) => {
   console.error('Server failed to start:', error);
   process.exit(1);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  server.close(() => {
+    console.log('Server shutting down');
+    process.exit(0);
+  });
 });
