@@ -15,7 +15,9 @@ export async function handleWebhook(event: any) {
       type,
       timestamp: new Date().toISOString(),
       castHash: cast?.hash,
-      authorUsername: cast?.author?.username
+      authorUsername: cast?.author?.username,
+      hasAttachments: cast?.attachments?.length > 0,
+      attachments: cast?.attachments
     });
 
     if (type === 'cast.created') {
@@ -69,14 +71,33 @@ async function handleMention(cast: any) {
     let response;
 
     if (hasImage) {
-        console.log('Cast contains image(s), analyzing...');
-        const imageUrl = cast.attachments[0].url;
-        const imageAnalysis = await analyzeImage(imageUrl);
-        
-        if (imageAnalysis) {
-            response = generateImageResponse(imageAnalysis);
-            console.log('Generated image-based response:', response);
-        } else {
+        console.log('Processing cast with image:', {
+            castHash: cast.hash,
+            authorUsername: cast.author.username,
+            attachments: cast.attachments.map(att => ({
+                type: att.type,
+                url: att.url
+            })),
+            timestamp: new Date().toISOString()
+        });
+
+        try {
+            const imageUrl = cast.attachments[0].url;
+            console.log('Attempting to analyze image:', imageUrl);
+            
+            const imageAnalysis = await analyzeImage(imageUrl);
+            console.log('Image analysis result:', imageAnalysis);
+            
+            if (imageAnalysis) {
+                response = generateImageResponse(imageAnalysis);
+                console.log('Generated image-based response:', response);
+            } else {
+                console.log('Image analysis failed, falling back to text response');
+                const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+                response = await generateBotResponse(cleanedMessage);
+            }
+        } catch (error) {
+            console.error('Error in image analysis:', error);
             // Fallback to text-based response if image analysis fails
             const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
             response = await generateBotResponse(cleanedMessage);
@@ -128,7 +149,7 @@ export async function engageWithChannelContent() {
     console.log('Checking collectors canyon channel for content to engage with');
     
     // Get recent casts from the channel
-    const response = await neynar.searchCastsByChannel({
+    const response = await neynar.searchCasts({
       channelId: "collectorscanyon",
       limit: 20
     });

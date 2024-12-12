@@ -6,12 +6,22 @@ type ImageAnnotation = protos.google.cloud.vision.v1.IAnnotateImageResponse;
 // Initialize the client
 let client: ImageAnnotatorClient;
 try {
-  client = new ImageAnnotatorClient({
+  const credentials = {
     keyFilename: config.GOOGLE_APPLICATION_CREDENTIALS
-  });
+  };
+  console.log('Initializing Google Vision client with credentials path:', config.GOOGLE_APPLICATION_CREDENTIALS);
+  
+  client = new ImageAnnotatorClient(credentials);
   console.log('Google Vision client initialized successfully');
 } catch (error) {
-  console.error('Failed to initialize Google Vision client:', error);
+  console.error('Failed to initialize Google Vision client:', {
+    error: error instanceof Error ? {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    } : error,
+    credentialsPath: config.GOOGLE_APPLICATION_CREDENTIALS
+  });
   process.exit(1);
 }
 
@@ -32,9 +42,15 @@ interface DetailedImageAnalysis extends ImageAnalysis {
  */
 export async function analyzeImage(imageUrl: string): Promise<DetailedImageAnalysis | null> {
   try {
-    console.log('Analyzing image:', imageUrl);
+    console.log('Starting image analysis for URL:', imageUrl);
 
-    // Analyze the image with higher maxResults
+    // Validate URL
+    if (!imageUrl || !imageUrl.startsWith('http')) {
+      console.error('Invalid image URL:', imageUrl);
+      return null;
+    }
+
+    console.log('Sending request to Google Vision API...');
     const [result] = await client.annotateImage({
       image: { source: { imageUri: imageUrl } },
       features: [
@@ -43,6 +59,8 @@ export async function analyzeImage(imageUrl: string): Promise<DetailedImageAnaly
         { type: 'IMAGE_PROPERTIES' }
       ],
     });
+
+    console.log('Raw Vision API response:', JSON.stringify(result, null, 2));
 
     // Extract labels with confidence scores
     const labels = result.labelAnnotations
