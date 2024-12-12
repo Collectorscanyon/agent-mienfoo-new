@@ -60,59 +60,73 @@ app.get('/', (_req: Request, res: Response) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Webhook endpoint with mention handling and OpenAI integration
+// Webhook endpoint with enhanced mention handling
 app.post('/webhook', async (req: Request, res: Response) => {
     try {
-        console.log('Webhook received:', {
-            timestamp: new Date().toISOString(),
-            body: req.body
-        });
-
-        const { type, cast } = req.body;
+        // Log the full webhook payload for debugging
+        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
 
         // Send immediate acknowledgment
         res.status(200).json({ status: 'success', message: 'Webhook received' });
 
-        if (type === 'cast.created') {
-            // Extract cast data from the webhook payload
-            const castData = req.body.data;
-            console.log('Processing cast:', castData);
+        const { type, data } = req.body;
 
-            // Check for mentions using both mentioned_profiles and text content
-            const isMentioned = castData.mentioned_profiles?.some((p: any) => p.fid === config.BOT_FID) ||
-                              castData.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
+        // Process webhook asynchronously
+        if (type === 'cast.created' && data?.mentioned_profiles) {
+            console.log('Processing cast:', JSON.stringify(data, null, 2));
             
-            if (isMentioned) {
-                console.log('Bot mention detected in cast:', castData.text);
-                
+            // Check if bot was mentioned
+            const isBotMentioned = data.mentioned_profiles.some((profile: any) => 
+                profile.fid === config.BOT_FID ||
+                profile.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase()
+            );
+
+            if (isBotMentioned) {
+                console.log('Bot mention detected:', {
+                    castHash: data.hash,
+                    author: data.author.username,
+                    text: data.text
+                });
+
                 try {
-                    // Like the mention
+                    // Step 1: Like the mention
                     await neynar.publishReaction({
                         signerUuid: config.SIGNER_UUID,
                         reactionType: 'like',
-                        target: castData.hash
+                        target: data.hash
                     });
+                    console.log('Successfully liked the mention');
 
-                    // Generate and send response
-                    const cleanedMessage = castData.text.replace(new RegExp(`@${config.BOT_USERNAME}`, 'i'), '').trim();
+                    // Step 2: Generate response
+                    const cleanedMessage = data.text
+                        .replace(new RegExp(`@${config.BOT_USERNAME}`, 'gi'), '')
+                        .trim();
                     const response = await generateBotResponse(cleanedMessage);
-                    
-                    // Reply in the collectors canyon channel
+                    console.log('Generated response:', response);
+
+                    // Step 3: Reply to the mention
                     await neynar.publishCast({
                         signerUuid: config.SIGNER_UUID,
-                        text: `@${castData.author.username} ${response}`,
-                        parent: castData.hash,
+                        text: `@${data.author.username} ${response}`,
+                        parent: data.hash,
                         channelId: 'collectorscanyon'
                     });
+                    console.log('Successfully replied to the mention');
 
-                    console.log('Successfully responded to mention');
                 } catch (error) {
-                    console.error('Error handling mention:', error);
+                    console.error('Error in bot actions:', error);
+                    if (error instanceof Error) {
+                        console.error('Error details:', {
+                            name: error.name,
+                            message: error.message,
+                            stack: error.stack
+                        });
+                    }
                 }
             }
         }
     } catch (error) {
-        console.error('Webhook error:', error);
+        console.error('Webhook processing error:', error);
         // Already sent 200 OK, just log the error
     }
 });
