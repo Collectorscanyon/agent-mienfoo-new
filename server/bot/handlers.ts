@@ -42,6 +42,12 @@ export async function handleWebhook(event: any) {
     });
 
     if (type === 'cast.created') {
+      // Skip if the message is from the bot itself
+      if (cast.author.fid.toString() === config.BOT_FID) {
+        console.log('Skipping bot\'s own message:', cast.hash);
+        return;
+      }
+
       // Check if we've already processed this message
       if (processedMessages.has(cast.hash)) {
         console.log('Skipping already processed message:', cast.hash);
@@ -54,13 +60,13 @@ export async function handleWebhook(event: any) {
       // Check for mentions using both FID and username
       const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
                        cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
-      
-      console.log('Mention detection:', {
-        hasMention: isMentioned,
+
+      console.log('Mention detection for cast:', {
+        castHash: cast.hash,
+        author: cast.author.username,
+        authorFid: cast.author.fid,
         botFid: config.BOT_FID,
-        botUsername: config.BOT_USERNAME,
-        text: cast.text,
-        mentions: cast.mentions
+        isMentioned
       });
 
       if (isMentioned) {
@@ -181,10 +187,14 @@ export async function engageWithChannelContent() {
     
     // Get recent casts from the channel
     const response = await neynar.searchCasts({
-      q: "collect",
       channelId: "collectorscanyon",
       limit: 20
     });
+
+    if (!response?.result?.casts) {
+      console.log('No casts found in channel');
+      return;
+    }
 
     console.log(`Found ${response.result.casts.length} casts in channel`);
 
