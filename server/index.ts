@@ -7,64 +7,57 @@ interface ExtendedRequest extends Request {
 
 const app = express();
 
-// Configure body parsing with raw body storage
+// Basic middleware for handling both JSON and raw bodies
 app.use(express.json({
     verify: (req: ExtendedRequest, _res: Response, buf: Buffer) => {
         req.rawBody = buf;
     }
 }));
+app.use(express.raw({ type: '*/*' }));
 
-// Detailed request logging middleware
+// Log all requests
 app.use((req: ExtendedRequest, res: Response, next: NextFunction) => {
-    console.log(`[${new Date().toISOString()}] Request:`, {
+    console.log('Request received:', {
+        timestamp: new Date().toISOString(),
         method: req.method,
         path: req.url,
-        contentType: req.headers['content-type'],
-        contentLength: req.headers['content-length']
+        headers: req.headers,
+        body: req.body
     });
     next();
 });
 
-// Root endpoint
+// Health check for ngrok
 app.get('/', (_req: Request, res: Response) => {
-    res.json({ 
-        status: 'ok', 
-        message: 'Server is running',
-        timestamp: new Date().toISOString()
-    });
+    res.send('OK'); // Simple response for ngrok verification
 });
 
-// Webhook endpoint with proper error handling
+// Webhook handler with immediate response
 app.post('/webhook', (req: ExtendedRequest, res: Response) => {
+    // Send immediate 200 response
+    res.status(200).send('OK');
+    
+    // Process webhook after response
     try {
-        // Log webhook details before processing
-        console.log('Webhook received:', {
+        // Log the webhook details
+        console.log('Webhook processed:', {
             timestamp: new Date().toISOString(),
             contentType: req.headers['content-type'],
-            body: req.body,
+            body: req.body instanceof Buffer ? req.body.toString() : req.body,
             rawBody: req.rawBody?.toString()
         });
-
-        // Send immediate success response
-        res.status(200).json({ 
-            status: 'ok',
-            message: 'Webhook received',
-            timestamp: new Date().toISOString()
-        });
     } catch (error) {
-        console.error('Webhook error:', error);
-        // Since we're catching parsing errors, we can send an error response
-        res.status(400).json({ 
-            error: 'Invalid request',
-            message: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: new Date().toISOString()
+        // Log error but don't send response (already sent 200)
+        console.error('Error processing webhook:', {
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? error.message : 'Unknown error'
         });
     }
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[${new Date().toISOString()}] Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
 }).on('error', (error) => {
     console.error('Server failed to start:', error);
     process.exit(1);
