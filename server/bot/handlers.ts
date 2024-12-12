@@ -104,44 +104,56 @@ export async function engageWithChannelContent() {
     console.log('Checking collectors canyon channel for content to engage with');
     
     // Get recent casts from the channel using the v2 API method
-    const response = await neynar.fetchChannel({ 
-      channelId: 'collectorscanyon'
+    const response = await neynar.fetchFeed({ 
+      feedType: 'filter',
+      filterType: 'channel',
+      channelId: 'collectorscanyon',
+      limit: 20
     });
 
-    if (!response) {
-      console.log('No response received from channel fetch');
+    if (!response?.casts) {
+      console.log('No casts found in channel');
       return;
     }
 
-    console.log(`Found ${response.casts?.length || 0} casts in the channel`);
-    const casts = response.casts?.slice(0, 20) || [];
+    console.log(`Found ${response.casts.length} casts in the channel`);
+    const casts = response.casts;
     
     for (const cast of casts) {
       try {
-        // Skip own casts and already engaged content
+        // Skip own casts
         if (cast.author.fid.toString() === config.BOT_FID) {
           console.log('Skipping own cast');
           continue;
         }
 
-        // Evaluate if content is reaction-worthy
         if (isCollectionRelatedContent(cast.text)) {
+          const engagementLevel = getEngagementType(cast.text);
           console.log('Found collection-related content:', {
             author: cast.author.username,
             text: cast.text.substring(0, 50) + '...',
-            castHash: cast.hash
+            castHash: cast.hash,
+            engagementLevel
           });
 
-          // Add reaction (like)
+          // Always like collection-related content
           await neynar.publishReaction({
             signerUuid: config.SIGNER_UUID,
             reactionType: 'like',
             target: cast.hash
           });
+          console.log(`Liked cast ${cast.hash} by ${cast.author.username}`);
+
+          // For high engagement content, recast as well
+          if (engagementLevel === 'high') {
+            await neynar.publishRecast({
+              signerUuid: config.SIGNER_UUID,
+              castHash: cast.hash
+            });
+            console.log(`Recasted high-engagement content from ${cast.author.username}`);
+          }
           
-          console.log(`Successfully liked cast ${cast.hash} by ${cast.author.username}`);
-          
-          // Add a delay between reactions to avoid rate limits
+          // Add a delay between actions to avoid rate limits
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       } catch (error) {
@@ -164,14 +176,41 @@ export async function engageWithChannelContent() {
 }
 
 function isCollectionRelatedContent(text: string): boolean {
-  const keywords = [
-    'collect', 'rare', 'vintage', 'cards', 'trading',
-    'figure', 'limited', 'edition', 'mint', 'graded',
-    'sealed', 'hobby', 'treasure', 'antique', 'value'
+  const highPriorityKeywords = [
+    'collect', 'rare', 'vintage', 'limited edition',
+    'first edition', 'mint condition', 'graded', 'sealed',
+    'treasure', 'showcase', 'collection', 'display'
+  ];
+  
+  const collectionTypes = [
+    'cards', 'trading cards', 'figures', 'comics',
+    'manga', 'coins', 'stamps', 'antiques', 'toys',
+    'memorabilia', 'artwork', 'plushies'
   ];
   
   text = text.toLowerCase();
-  return keywords.some(keyword => text.includes(keyword));
+  
+  // Check for high-priority collection keywords
+  const hasHighPriority = highPriorityKeywords.some(keyword => text.includes(keyword));
+  
+  // Check for collection type mentions
+  const hasCollectionType = collectionTypes.some(type => text.includes(type));
+  
+  // Content should either have a high-priority keyword or combine a collection type with value-related terms
+  return hasHighPriority || (hasCollectionType && text.match(/rare|value|worth|price|grade|condition/));
+}
+
+function getEngagementType(text: string): 'high' | 'medium' | 'low' {
+  const enthusiasm = text.match(/!+|\?+|amazing|incredible|wow|awesome/gi)?.length || 0;
+  const hasPhotos = text.includes('url.xyz') || text.includes('img'); // Basic check for media
+  const wordCount = text.split(/\s+/).length;
+  
+  if ((enthusiasm >= 2 && wordCount > 10) || hasPhotos) {
+    return 'high';
+  } else if (enthusiasm >= 1 || wordCount > 15) {
+    return 'medium';
+  }
+  return 'low';
 }
 
 // Start periodic engagement
