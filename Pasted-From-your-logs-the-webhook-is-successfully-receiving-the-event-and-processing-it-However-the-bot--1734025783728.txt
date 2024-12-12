@@ -1,0 +1,110 @@
+From your logs, the webhook is successfully receiving the event and processing it. However, the bot isn't responding, which likely indicates an issue in the function that handles replies (replyToCast) or potentially how your server interacts with the Farcaster API.
+
+Here's a step-by-step debugging process to identify and resolve the issue:
+
+1. Check the replyToCast Function
+Make sure the replyToCast function is correctly implemented and pointing to the correct Farcaster API endpoint. Here's an example implementation:
+
+typescript
+Copy code
+import axios from 'axios';
+
+const API_BASE_URL = 'https://api.warpcast.com'; // Replace with the actual API base URL
+const API_TOKEN = '<your-api-token>'; // Replace with your actual API token
+
+export const replyToCast = async (castHash: string, message: string) => {
+    try {
+        const response = await axios.post(
+            `${API_BASE_URL}/casts/${castHash}/reply`, // Update the endpoint if necessary
+            { text: message },
+            {
+                headers: {
+                    Authorization: `Bearer ${API_TOKEN}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+        console.log('Reply sent successfully:', response.data);
+    } catch (error) {
+        console.error('Error sending reply:', error.response?.data || error.message);
+    }
+};
+2. Add Logging to the replyToCast Call
+In your processMention function, log the hash of the cast and the message being sent before calling replyToCast. This ensures the right data is being passed to the function:
+
+typescript
+Copy code
+export const processMention = async (castData: any) => {
+    try {
+        const { text, hash, author } = castData;
+
+        console.log('Preparing to reply to cast:', {
+            hash,
+            message: `👋 Hi, ${author.display_name}! Mienfoo here!`,
+        });
+
+        await replyToCast(hash, `👋 Hi, ${author.display_name}! Mienfoo here!`);
+        console.log('Replied to cast:', hash);
+
+        // Optional: Like and Recast the mention
+        await likeCast(hash);
+        console.log('Liked cast:', hash);
+
+        await recastCast(hash);
+        console.log('Recasted cast:', hash);
+    } catch (error) {
+        console.error('Error processing mention:', error);
+    }
+};
+3. Verify Farcaster API Connectivity
+Use curl or Postman to directly test the Farcaster API endpoints to confirm that your token and endpoint are working. For example:
+
+bash
+Copy code
+curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer <your-api-token>" \
+-d '{"text":"Hello from Mienfoo!"}' \
+https://api.warpcast.com/casts/<cast-hash>/reply
+If this works, the issue is likely in your replyToCast function or how it's integrated.
+
+4. Debug Axios Errors
+If the replyToCast call is failing, check the error logs carefully. Common issues include:
+
+401 Unauthorized: Check the API token and ensure it has permissions to reply.
+404 Not Found: Verify the API endpoint and cast hash.
+400 Bad Request: Double-check the payload structure.
+Add more detailed error logging to replyToCast:
+
+typescript
+Copy code
+export const replyToCast = async (castHash: string, message: string) => {
+    try {
+        const response = await axios.post(
+            `${API_BASE_URL}/casts/${castHash}/reply`,
+            { text: message },
+            {
+                headers: {
+                    Authorization: `Bearer ${API_TOKEN}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+        console.log('Reply sent successfully:', response.data);
+    } catch (error) {
+        console.error('Error sending reply:', {
+            message: error.message,
+            response: error.response?.data,
+        });
+    }
+};
+5. Test the Webhook End-to-End
+Send a test mention:
+
+Mention @mienfoo.eth in a cast.
+Verify the webhook logs show the cast data and that the processMention function is triggered.
+Monitor the bot actions:
+
+Confirm the reply is sent to the mentioned cast.
+Check for any logs indicating success or failure in the replyToCast function.
+6. If Still Not Working
+Check Replit Logs: Ensure there are no network connectivity issues or other errors preventing the bot from reaching the Farcaster API.
+Inspect Environment Variables: Verify that all required API tokens and configuration values are correctly set.

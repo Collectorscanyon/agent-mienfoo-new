@@ -7,9 +7,16 @@ import { config } from './config';
 
 const app = express();
 
-// Initialize Neynar client with standard config
+// Initialize Neynar client
 const neynar = new NeynarAPIClient({ 
-    apiKey: config.NEYNAR_API_KEY 
+    apiKey: config.NEYNAR_API_KEY,
+    configuration: {
+        baseOptions: {
+            headers: {
+                "api-key": config.NEYNAR_API_KEY
+            }
+        }
+    }
 });
 
 // Detailed request logging
@@ -82,21 +89,29 @@ app.post('/webhook', async (req: Request, res: Response) => {
 
                 try {
                     // Step 1: Like the mention
-                    await neynar.reactions.cast.like(config.SIGNER_UUID, cast.hash);
+                    console.log('Attempting to like cast:', cast.hash);
+                    await neynar.publishReaction({
+                        signerUuid: config.SIGNER_UUID,
+                        reactionType: 'like',
+                        castHash: cast.hash,
+                    });
                     console.log('Successfully liked the mention');
 
                     // Step 2: Generate response
                     const cleanedMessage = cast.text
                         .replace(new RegExp(`@${config.BOT_USERNAME}`, 'gi'), '')
                         .trim();
+                    console.log('Generating response for:', cleanedMessage);
                     const response = await generateBotResponse(cleanedMessage);
                     console.log('Generated response:', response);
 
                     // Step 3: Reply to the mention
+                    console.log('Attempting to reply to cast:', cast.hash);
                     await neynar.publishCast({
                         signerUuid: config.SIGNER_UUID,
                         text: `@${cast.author.username} ${response}`,
-                        parent: cast.hash
+                        parent: cast.hash,
+                        channelId: 'collectorscanyon'
                     });
                     console.log('Successfully replied to the mention');
 
