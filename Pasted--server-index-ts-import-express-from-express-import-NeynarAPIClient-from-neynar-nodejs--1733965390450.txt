@@ -1,0 +1,79 @@
+// server/index.ts
+import express from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+
+// Initialize Neynar client
+const neynar = new NeynarAPIClient({ apiKey: process.env.NEYNAR_API_KEY || '' });
+
+// Simple logging middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
+// Webhook handler
+app.post('/webhook', async (req, res) => {
+  try {
+    const { type, cast } = req.body;
+    console.log('Received webhook:', { type, cast });
+
+    if (type === 'cast.created') {
+      // Handle mentions of Mienfoo
+      if (cast.mentions?.some((m: any) => m.fid === '834885')) {
+        console.log('Bot mentioned by:', cast.author.username);
+        
+        // Like the mention
+        await neynar.reactToCast({
+          signer_uuid: process.env.SIGNER_UUID || '',
+          reaction_type: 'like',
+          cast_hash: cast.hash
+        });
+
+        // Reply to mention
+        await neynar.publishCast({
+          signer_uuid: process.env.SIGNER_UUID || '',
+          text: `Hey @${cast.author.username}! 👋 Let's talk about collectibles!`,
+          parent: cast.hash
+        });
+      }
+
+      // Post to CollectorsCanyon if relevant
+      if (isCollectibleRelated(cast.text)) {
+        await neynar.publishCast({
+          signer_uuid: process.env.SIGNER_UUID || '',
+          text: `💡 Interesting discussion: ${cast.text}`,
+          parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+        });
+      }
+    }
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+function isCollectibleRelated(text: string): boolean {
+  const keywords = ['collect', 'card', 'rare', 'trading', 'pokemon', 'magic'];
+  return keywords.some(keyword => text.toLowerCase().includes(keyword));
+}
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    hasNeynarKey: !!process.env.NEYNAR_API_KEY,
+    hasSignerUuid: !!process.env.SIGNER_UUID
+  });
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🤖 Bot running on port ${PORT}`);
+  console.log('🎯 Ready for mentions and channel posts');
+});

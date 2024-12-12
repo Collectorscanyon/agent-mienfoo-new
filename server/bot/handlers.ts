@@ -2,26 +2,33 @@ import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from '../config';
 import { generateBotResponse } from './openai';
 
-const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
-
-// Debug logging middleware
-const logWebhook = (type: string, data: any) => {
-  console.log(`[${new Date().toISOString()}] Webhook received:`, {
-    type,
-    data: JSON.stringify(data, null, 2)
-  });
-};
+const neynar = new NeynarAPIClient({ 
+  apiKey: config.NEYNAR_API_KEY,
+  configuration: {
+    baseOptions: {
+      headers: {
+        "x-neynar-api-key": config.NEYNAR_API_KEY
+      }
+    }
+  }
+});
 
 export async function handleWebhook(event: any) {
   const { type, cast } = event;
-  logWebhook(type, event);
-
+  
   try {
     if (type === 'cast.created') {
-      // Check for mentions
+      // Check for mentions using both FID and username
       const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
                          cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
       
+      console.log('Mention check:', {
+        hasMention: isMentioned,
+        botFid: config.BOT_FID,
+        botUsername: config.BOT_USERNAME,
+        text: cast.text
+      });
+
       if (isMentioned) {
         console.log('Bot mention detected in cast:', cast.text);
         await handleMention(cast);

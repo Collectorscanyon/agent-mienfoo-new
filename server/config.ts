@@ -3,7 +3,6 @@ dotenv.config();
 
 export interface Config {
   NEYNAR_API_KEY: string;
-  OPENAI_API_KEY: string;
   SIGNER_UUID: string;
   WEBHOOK_SECRET: string;
   PORT: number;
@@ -11,27 +10,25 @@ export interface Config {
   BOT_FID: string;
 }
 
-const createConfig = (): Config => {
-  const config = {
-    NEYNAR_API_KEY: process.env.NEYNAR_API_KEY || '',
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
-    SIGNER_UUID: process.env.SIGNER_UUID || '',
-    WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
-    PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
-    BOT_USERNAME: process.env.BOT_USERNAME || 'mienfoo',
-    BOT_FID: process.env.BOT_FID || '834885' // Default FID for Mienfoo
-  };
-
-  // Check required fields
-  const required = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'OPENAI_API_KEY'];
-  const missing = required.filter(key => !config[key as keyof Config]);
-  
-  if (missing.length > 0) {
-    console.error('Missing required environment variables:', missing.join(', '));
+function validateEnvVar(name: string, value: string | undefined, defaultValue?: string): string {
+  if (!value && !defaultValue) {
+    console.error(`Missing required environment variable: ${name}`);
     process.exit(1);
   }
+  return value || defaultValue || '';
+}
+
+function createConfig(): Config {
+  const config: Config = {
+    NEYNAR_API_KEY: validateEnvVar('NEYNAR_API_KEY', process.env.NEYNAR_API_KEY),
+    SIGNER_UUID: validateEnvVar('SIGNER_UUID', process.env.SIGNER_UUID),
+    WEBHOOK_SECRET: validateEnvVar('WEBHOOK_SECRET', process.env.WEBHOOK_SECRET, 'default_secret'),
+    PORT: parseInt(validateEnvVar('PORT', process.env.PORT, '5000'), 10),
+    BOT_USERNAME: validateEnvVar('BOT_USERNAME', process.env.BOT_USERNAME, 'mienfoo'),
+    BOT_FID: validateEnvVar('BOT_FID', process.env.BOT_FID, '834885')
+  };
 
   return config;
-};
+}
 
 export const config = createConfig();
