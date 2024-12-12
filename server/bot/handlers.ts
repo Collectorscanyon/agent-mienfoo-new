@@ -216,20 +216,32 @@ export async function handleWebhook(event: any) {
       timestamp: new Date().toISOString()
     });
 
-    // Check for bot mentions
-    const isMentioned = (
+    // Check for bot mentions and collector mentions
+    const text = cast.text?.toLowerCase() || '';
+    const isBotMentioned = (
       cast.mentioned_profiles?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
-      cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
-      cast.text?.toLowerCase().includes('@mienfoo.eth')
+      text.includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
+      text.includes('@mienfoo.eth')
     );
+    const isCollectorMentioned = text.includes('@collectorscanyon.eth');
 
-    if (isMentioned) {
+    // Log mention details
+    console.log('Mention detection:', {
+      hash: cast.hash,
+      isBotMentioned,
+      isCollectorMentioned,
+      text: cast.text
+    });
+
+    if (isBotMentioned || isCollectorMentioned) {
       console.log('Processing mention:', {
         hash: cast.hash,
         author: cast.author.username,
-        text: cast.text
+        text: cast.text,
+        botMentioned: isBotMentioned,
+        collectorMentioned: isCollectorMentioned
       });
-      await handleMention(cast);
+      await handleMention(cast, isCollectorMentioned);
     }
 
   } catch (error) {
@@ -258,7 +270,7 @@ async function isBotMessageInChain(castHash: string, depth: number = 0): Promise
   }
 }
 
-async function handleMention(cast: any) {
+async function handleMention(cast: any, isCollectorMention: boolean = false) {
   try {
     const timestamp = new Date().toISOString();
     const castHash = cast.hash;
@@ -358,9 +370,20 @@ async function handleMention(cast: any) {
   }
 }
 
-async function generateTextResponse(text: string): Promise<string> {
+async function generateTextResponse(text: string, isCollectorMention: boolean = false): Promise<string> {
   const cleanedMessage = text.replace(/@[\w.]+/g, '').trim();
-  console.log('Generating response for cleaned message:', cleanedMessage);
+  console.log('Generating response for cleaned message:', {
+    original: text,
+    cleaned: cleanedMessage,
+    isCollectorMention
+  });
+
+  if (isCollectorMention) {
+    // Add collector-specific context to the message
+    const collectorContext = "As Mienfoo, loyal friend of CollectorsCanyon, sharing wisdom about collecting: ";
+    return await generateBotResponse(collectorContext + cleanedMessage);
+  }
+  
   return await generateBotResponse(cleanedMessage);
 }
 
