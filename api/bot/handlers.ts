@@ -33,10 +33,12 @@ export async function handleWebhook(event: any) {
         const { type, data: cast } = event;
         
         // Early validation
-        if (!type || !data || type !== 'cast.created' || !cast.hash) {
+        if (!type || !cast || type !== 'cast.created' || !cast.hash) {
             console.log('Invalid webhook payload:', { type, hasData: !!cast });
             return;
         }
+
+        const data = cast;
 
         // Deduplication check
         if (processedCastHashes.has(cast.hash)) {

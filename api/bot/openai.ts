@@ -1,9 +1,9 @@
-import { Configuration, OpenAIApi } from 'openai';
+import OpenAI from 'openai';
 
 // Initialize OpenAI with environment variables
-const openai = new OpenAIApi(new Configuration({
+const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-}));
+});
 
 export async function generateBotResponse(message: string): Promise<string> {
     console.log('Attempt 1/3 to generate response for:', message);
