@@ -20,16 +20,13 @@ app.get('/', (_req: Request, res: Response) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Simplified webhook handler
+// Bare minimum webhook handler
 app.post('/webhook', (req: Request, res: Response) => {
-    // Send 200 OK immediately
-    res.status(200).send('OK');
+    // Log request received
+    console.log('Webhook request received');
     
-    // Log webhook data
-    console.log('Webhook received:', {
-        timestamp: new Date().toISOString(),
-        body: req.body
-    });
+    // Send immediate response without any processing
+    res.status(200).send('OK');
 });
 
 const PORT = 5000;
