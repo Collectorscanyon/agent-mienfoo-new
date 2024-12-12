@@ -21,6 +21,14 @@ export async function handleWebhook(event: any) {
     });
 
     if (type === 'cast.created') {
+      console.log('Processing cast.created event:', {
+        castHash: cast.hash,
+        authorUsername: cast.author?.username,
+        text: cast.text,
+        hasEmbeds: cast.embeds?.length > 0,
+        embeds: cast.embeds
+      });
+
       // Check for mentions using both FID and username
       const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
                          cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
@@ -66,31 +74,55 @@ async function handleMention(cast: any) {
       target: cast.hash
     });
 
-    // Check if the cast has an image
-    const hasImage = cast.attachments && cast.attachments.length > 0;
+    // Check both direct attachments and embedded images
+    let imageUrl = null;
     let response;
 
-    if (hasImage) {
+    // Check direct attachments first
+    if (cast.attachments?.length > 0) {
+        imageUrl = cast.attachments[0].url;
+        console.log('Found image in direct attachments:', imageUrl);
+    }
+    // Check embedded images if no direct attachments
+    else if (cast.embeds?.length > 0) {
+        const embeddedImage = cast.embeds[0]?.cast?.embeds?.[0];
+        if (embeddedImage?.url) {
+            imageUrl = embeddedImage.url;
+            console.log('Found image in embedded cast:', imageUrl);
+        }
+    }
+
+    if (imageUrl) {
         console.log('Processing cast with image:', {
             castHash: cast.hash,
             authorUsername: cast.author.username,
-            attachments: cast.attachments.map(att => ({
-                type: att.type,
-                url: att.url
-            })),
+            imageUrl,
             timestamp: new Date().toISOString()
         });
 
         try {
-            const imageUrl = cast.attachments[0].url;
-            console.log('Attempting to analyze image:', imageUrl);
+            console.log('Starting image analysis process:', {
+                imageUrl,
+                castHash: cast.hash,
+                timestamp: new Date().toISOString()
+            });
             
             const imageAnalysis = await analyzeImage(imageUrl);
-            console.log('Image analysis result:', imageAnalysis);
+            console.log('Vision API analysis result:', {
+                success: !!imageAnalysis,
+                isCollectible: imageAnalysis?.isCollectible,
+                labels: imageAnalysis?.labels,
+                hasText: !!imageAnalysis?.text,
+                timestamp: new Date().toISOString()
+            });
             
             if (imageAnalysis) {
                 response = generateImageResponse(imageAnalysis);
-                console.log('Generated image-based response:', response);
+                console.log('Generated image-based response:', {
+                    response,
+                    analysisType: imageAnalysis.isCollectible ? 'collectible' : 'non-collectible',
+                    timestamp: new Date().toISOString()
+                });
             } else {
                 console.log('Image analysis failed, falling back to text response');
                 const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();

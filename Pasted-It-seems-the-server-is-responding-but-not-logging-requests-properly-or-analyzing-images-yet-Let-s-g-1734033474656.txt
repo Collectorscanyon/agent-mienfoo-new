@@ -1,0 +1,67 @@
+It seems the server is responding but not logging requests properly or analyzing images yet. Let’s go through these troubleshooting steps to fix the issue:
+
+1. Verify Webhook and Image Handling
+Ensure the webhook handling logic is detecting and logging incoming image attachments.
+
+Add Detailed Logging for Webhook Events: Modify the webhook handler to log all received data explicitly:
+
+javascript
+Copy code
+console.log('Received webhook event:', JSON.stringify(cast, null, 2));
+if (cast.attachments && cast.attachments.length > 0) {
+    console.log('Attachments detected:', cast.attachments);
+}
+Validate Image URL Extraction: Log the image URL before analyzing:
+
+javascript
+Copy code
+const imageUrl = cast.attachments?.[0]?.url;
+if (!imageUrl) {
+    console.error('No valid image URL found in attachments:', cast.attachments);
+    return;
+}
+console.log('Analyzing image with URL:', imageUrl);
+2. Check Vision API Integration
+Ensure analyzeImage logs the API requests and responses:
+
+javascript
+Copy code
+console.log('Starting image analysis for URL:', imageUrl);
+const [result] = await client.annotateImage({
+    image: { source: { imageUri: imageUrl } },
+    features: [{ type: 'LABEL_DETECTION' }, { type: 'TEXT_DETECTION' }]
+});
+console.log('Vision API response:', JSON.stringify(result, null, 2));
+Add error handling if the Vision API call fails:
+
+javascript
+Copy code
+} catch (error) {
+    console.error('Error during Vision API analysis:', error.message);
+    return null;
+}
+3. Verify Server Logs
+Check whether logs related to analyzeImage or the webhook are showing up:
+
+Restart the bot and post an image in the channel.
+Look for:
+Logs like Attachments detected.
+Logs like Analyzing image with URL.
+Vision API responses.
+4. Test Changes
+Share an image in the /collectorscanyon channel and ensure the bot:
+Logs image details.
+Sends the image to the Vision API.
+Replies based on the analysis.
+5. Possible Additional Fixes
+If searchCastsByChannel or other API methods are failing:
+
+Ensure the latest Neynar API or function name is used.
+Update dependencies:
+bash
+Copy code
+npm install @neynar/client --save
+Next Steps:
+Post an image in the channel for testing.
+Share logs to confirm if the analysis pipeline is working.
+Let me know the results or errors, and I’ll assist further!
