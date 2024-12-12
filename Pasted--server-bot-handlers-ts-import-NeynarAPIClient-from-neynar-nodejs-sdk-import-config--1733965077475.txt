@@ -1,0 +1,79 @@
+// server/bot/handlers.ts
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { config } from '../config';
+
+const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
+
+// Debug logging middleware
+const logWebhook = (type: string, data: any) => {
+  console.log(`[${new Date().toISOString()}] Webhook received:`, {
+    type,
+    data: JSON.stringify(data, null, 2)
+  });
+};
+
+export async function handleWebhook(event: any) {
+  const { type, cast } = event;
+  logWebhook(type, event);
+
+  try {
+    switch (type) {
+      case 'cast.created':
+        // Check for mentions
+        if (cast.mentions?.some((m: any) => m.fid === '834885')) {
+          console.log('Bot mention detected');
+          await handleMention(cast);
+        }
+        
+        // Check if cast should be shared to collectorscanyon
+        if (shouldShareToCollectorsCanyon(cast)) {
+          await shareToCollectorsCanyon(cast);
+        }
+        break;
+    }
+  } catch (error) {
+    console.error('Error in webhook handler:', error);
+  }
+}
+
+async function handleMention(cast: any) {
+  try {
+    console.log('Handling mention from:', cast.author.username);
+    
+    // Like the mention
+    await neynar.reactToCast({
+      signer_uuid: config.SIGNER_UUID,
+      reaction_type: 'like',
+      cast_hash: cast.hash
+    });
+
+    // Reply to the mention
+    await neynar.publishCast({
+      signer_uuid: config.SIGNER_UUID,
+      text: `Hey @${cast.author.username}! 👋 Thanks for the mention! Let's talk about collectibles! #CollectorsCanyonClub`,
+      parent: cast.hash
+    });
+  } catch (error) {
+    console.error('Error handling mention:', error);
+  }
+}
+
+async function shareToCollectorsCanyon(cast: any) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: config.SIGNER_UUID,
+      text: cast.text,
+      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+    });
+  } catch (error) {
+    console.error('Error sharing to channel:', error);
+  }
+}
+
+function shouldShareToCollectorsCanyon(cast: any): boolean {
+  const text = cast.text.toLowerCase();
+  return text.includes('collect') || 
+         text.includes('cards') || 
+         text.includes('trading') ||
+         text.includes('rare');
+}

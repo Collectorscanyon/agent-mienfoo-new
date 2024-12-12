@@ -14,7 +14,7 @@ Your expertise is in collectibles, particularly:
 
 Keep responses concise (max 280 chars) and engaging.
 Use relevant emojis occasionally.
-Your responses will be posted in the CollectorsCanyon channel
+Always end your responses with #CollectorsCanyonClub
 
 Current personality traits:
 - Enthusiastic about collections
@@ -24,6 +24,8 @@ Current personality traits:
 
 export async function generateBotResponse(userMessage: string): Promise<string> {
   try {
+    console.log('Generating response for message:', userMessage);
+    
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
@@ -34,9 +36,15 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
       temperature: 0.7
     });
 
-    return completion.choices[0].message.content || "Sorry, I'm having trouble thinking right now! 😅";
+    const response = completion.choices[0]?.message?.content;
+    if (!response) {
+      throw new Error('No response generated');
+    }
+
+    console.log('Generated response:', response);
+    return response;
   } catch (error) {
     console.error('OpenAI Error:', error);
-    return "Oops! My collector brain is a bit foggy. Try again in a bit! 🌫️";
+    return "Oops! My collector brain needs a recharge! Let's chat again in a bit! 🔋 #CollectorsCanyonClub";
   }
 }

@@ -1,142 +1,86 @@
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
-import { handleCommand } from './commands';
 import { config } from '../config';
 import { generateBotResponse } from './openai';
 
-// Import the shared Neynar client instance
-import { neynar } from '../index';
+const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
 
-// Memory store for user collections
-// Define proper types for Neynar SDK responses
-interface Cast {
-  hash: string;
-  author: {
-    username: string;
-    fid: string;
-  };
-  text: string;
-}
+// Debug logging middleware
+const logWebhook = (type: string, data: any) => {
+  console.log(`[${new Date().toISOString()}] Webhook received:`, {
+    type,
+    data: JSON.stringify(data, null, 2)
+  });
+};
 
-interface CollectionItem {
-  item: string;
-  added: string;
-}
+export async function handleWebhook(event: any) {
+  const { type, cast } = event;
+  logWebhook(type, event);
 
-interface UserCollection {
-  [userId: string]: CollectionItem[];
-}
-
-const collections: UserCollection = {};
-
-export async function handleMention(cast: Cast) {
   try {
-    const username = cast.author.username;
-    const content = cast.text.toLowerCase();
-
-    console.log(`Processing mention from @${username}: ${content}`);
-
-    // Skip our own casts to prevent loops
-    if (username.toLowerCase() === config.BOT_USERNAME.toLowerCase()) {
-      console.log('Skipping own cast to prevent loops');
-      return;
+    if (type === 'cast.created') {
+      // Check for mentions
+      const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
+                         cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
+      
+      if (isMentioned) {
+        console.log('Bot mention detected in cast:', cast.text);
+        await handleMention(cast);
+      }
+      
+      // Check if cast should be shared to collectorscanyon
+      if (shouldShareToCollectorsCanyon(cast)) {
+        await shareToCollectorsCanyon(cast);
+      }
     }
+  } catch (error) {
+    console.error('Error in webhook handler:', error);
+    throw error;
+  }
+}
 
-    // First, let's log what we received
-    console.log('Processing mention details:', {
-      username,
-      content,
-      castHash: cast.hash,
-      hasCommands: content.includes('add') || content.includes('show') || content.includes('collection')
-    });
-
+async function handleMention(cast: any) {
+  try {
+    console.log('Handling mention from:', cast.author.username);
+    
     // Like the mention first
-    try {
-      console.log('Attempting to like cast:', cast.hash);
-      await likeCast(cast.hash);
-    } catch (likeError) {
-      console.error('Error liking cast:', likeError);
-      // Continue processing even if like fails
-    }
-
-    // Check for commands
-    const isCommand = content.includes('add') || 
-                     content.includes('show') || 
-                     content.includes('collection');
-    
-    if (isCommand) {
-      console.log('Command detected, handling:', content);
-      await handleCommand(cast, collections);
-      return;
-    }
-
-    // Generate AI response
-    console.log('Generating AI response');
-    const cleanedMessage = content.replace(/@mienfoo/i, '').trim();
-    
-    // Generate response using OpenAI
-    const response = await generateBotResponse(cleanedMessage);
-    await reply(cast.hash, `@${username} ${response}`);
-  } catch (error) {
-    console.error('Error handling mention:', error);
-    // Log the full error for debugging
-    if (error instanceof Error) {
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      });
-    }
-  }
-}
-
-export async function reply(parentHash: string, text: string) {
-  try {
-    console.log('Attempting to reply to cast:', { parentHash, text });
-    // Add #/collectorscanyon hashtag to all messages
-    // Format text with channel tag
-    // Format text without hashtag since we're posting directly to channel
-    const channelText = `${text}`;
-    
-    // Publish the cast to the collectors canyon channel
-    const response = await neynar.publishCast({
-      signerUuid: config.SIGNER_UUID,
-      text: channelText,
-      parent: parentHash,
-      channelId: 'collectorscanyon'
-    });
-    console.log('Reply sent successfully:', response);
-  } catch (error) {
-    console.error('Error replying to cast:', error);
-    if (error instanceof Error) {
-      console.error('Reply error details:', {
-        message: error.message,
-        stack: error.stack
-      });
-    }
-    throw error; // Re-throw to handle at caller level if needed
-  }
-}
-
-export async function likeCast(castHash: string) {
-  try {
-    console.log(`Attempting to like cast: ${castHash}`);
-    const response = await neynar.publishReaction({
+    await neynar.publishReaction({
       signerUuid: config.SIGNER_UUID,
       reactionType: 'like',
-      target: castHash
+      target: cast.hash
     });
-    console.log('Successfully liked cast:', response);
+
+    // Generate and send response
+    const cleanedMessage = cast.text.replace(new RegExp(`@${config.BOT_USERNAME}`, 'i'), '').trim();
+    const response = await generateBotResponse(cleanedMessage);
+    
+    await neynar.publishCast({
+      signerUuid: config.SIGNER_UUID,
+      text: `@${cast.author.username} ${response}`,
+      parent: cast.hash,
+      channelId: 'collectorscanyon'
+    });
   } catch (error) {
-    console.error('Error liking cast:', error);
-    if (error instanceof Error) {
-      console.error('Like error details:', {
-        message: error.message,
-        stack: error.stack
-      });
-    }
-    // Don't throw the error, just log it and continue
-    // This prevents reactions from blocking the main flow
+    console.error('Error handling mention:', error);
+    throw error;
   }
 }
 
-export { collections };
+async function shareToCollectorsCanyon(cast: any) {
+  try {
+    await neynar.publishCast({
+      signerUuid: config.SIGNER_UUID,
+      text: `💡 Interesting discussion about collectibles!\n\n${cast.text}`,
+      channelId: 'collectorscanyon'
+    });
+  } catch (error) {
+    console.error('Error sharing to channel:', error);
+  }
+}
+
+function shouldShareToCollectorsCanyon(cast: any): boolean {
+  const text = cast.text.toLowerCase();
+  return text.includes('collect') || 
+         text.includes('cards') || 
+         text.includes('trading') ||
+         text.includes('rare');
+}
