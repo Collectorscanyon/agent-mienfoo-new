@@ -1,13 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { handleWebhook } from './bot/handlers';
 
-// Track processed webhook events (with automatic cleanup)
-const processedWebhookEvents = new Set<string>();
+// Track processed webhook events with cleanup
+const processedEvents = new Set<string>();
 const WEBHOOK_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 // Enhanced request logging
-const logRequest = (req: VercelRequest) => {
-    console.log('Incoming request:', {
+function logRequest(req: VercelRequest, stage: string = 'initial') {
+    console.log(`Request details (${stage}):`, {
+        timestamp: new Date().toISOString(),
         method: req.method,
         url: req.url,
         headers: {
@@ -15,112 +16,139 @@ const logRequest = (req: VercelRequest) => {
             'content-length': req.headers['content-length']
         },
         body: req.body,
-        timestamp: new Date().toISOString()
+        query: req.query
     });
-};
+}
 
-// Main serverless handler
+// Manual body parsing for Vercel serverless function
+async function parseBody(req: VercelRequest): Promise<void> {
+    if (req.body) return; // Body already parsed
+
+    return new Promise((resolve, reject) => {
+        const contentType = req.headers['content-type'] || '';
+        let rawBody = '';
+
+        req.on('data', chunk => {
+            rawBody += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                if (contentType.includes('application/json')) {
+                    req.body = JSON.parse(rawBody);
+                } else if (contentType.includes('application/x-www-form-urlencoded')) {
+                    req.body = Object.fromEntries(new URLSearchParams(rawBody));
+                }
+                resolve();
+            } catch (error) {
+                console.error('Error parsing request body:', error);
+                reject(error);
+            }
+        });
+
+        req.on('error', reject);
+    });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
-        logRequest(req);
+        // Log initial request state
+        logRequest(req, 'initial');
+
+        // Parse request body
+        await parseBody(req);
+
+        // Log parsed request state
+        logRequest(req, 'after-parsing');
 
         // Health check endpoint
-        if (req.method === 'GET') {
-            return res.json({ status: 'ok', message: 'Server is running' });
+        if (req.method === 'GET' && req.url === '/api/health') {
+            return res.status(200).json({ status: 'ok', message: 'Bot API is running' });
         }
 
         // Webhook endpoint
         if (req.method === 'POST' && req.url === '/api/webhook') {
-            // Enhanced error handling for webhook payload
+            // Validate webhook payload
             if (!req.body || typeof req.body !== 'object') {
-                console.error('Invalid request body:', req.body);
-                return res.status(400).json({ error: 'Invalid request body' });
+                console.error('Invalid webhook payload:', {
+                    body: req.body,
+                    type: typeof req.body,
+                    contentType: req.headers['content-type']
+                });
+                return res.status(400).json({
+                    error: 'Invalid request body',
+                    details: 'Expected JSON object'
+                });
             }
 
-            // Send 200 OK after validation to prevent retries
+            const { type, data } = req.body;
+
+            // Validate webhook structure
+            if (!type || !data || type !== 'cast.created' || !data.hash) {
+                console.error('Invalid webhook structure:', {
+                    type,
+                    hasData: !!data,
+                    hasHash: data?.hash ? true : false
+                });
+                return res.status(400).json({
+                    error: 'Invalid webhook structure',
+                    details: {
+                        type: !type ? 'missing' : type,
+                        data: !data ? 'missing' : 'present',
+                        hash: !data?.hash ? 'missing' : 'present'
+                    }
+                });
+            }
+
+            // Send immediate acknowledgment
             res.status(200).send('OK');
 
-        try {
-                // Log the raw webhook payload
-                console.log('Processing webhook payload:', {
-                    body: req.body,
-                    contentType: req.headers['content-type'],
-                    timestamp: new Date().toISOString()
-                });
-
-                const { type, data } = req.body;
-                
-                // Enhanced validation with detailed logging
-                if (!type || !data || type !== 'cast.created' || !data.hash) {
-                    console.error('Invalid webhook payload structure:', {
-                        type,
-                        hasData: !!data,
-                        hasHash: data?.hash ? true : false,
-                        timestamp: new Date().toISOString()
-                    });
-                    return res.status(400).json({ 
-                        error: 'Invalid webhook payload structure',
-                        details: {
-                            type: !type ? 'missing' : type,
-                            data: !data ? 'missing' : 'present',
-                            hash: !data?.hash ? 'missing' : 'present'
-                        }
-                    });
+            try {
+                // Deduplication check
+                const eventId = `${type}-${data.hash}-${data.author?.username}`;
+                if (processedEvents.has(eventId)) {
+                    console.log('Skipping duplicate event:', eventId);
+                    return;
                 }
 
-            // Comprehensive deduplication check
-            const eventId = `${type}-${data.hash}-${data.author?.username}`;
-            if (processedWebhookEvents.has(eventId)) {
-                console.log('Skipping duplicate webhook event:', {
-                    eventId,
-                    timestamp: new Date().toISOString(),
-                    hash: data.hash,
-                    author: data.author?.username
+                // Mark as processed
+                processedEvents.add(eventId);
+                setTimeout(() => processedEvents.delete(eventId), WEBHOOK_TIMEOUT);
+
+                // Process webhook
+                await handleWebhook({ body: req.body });
+
+            } catch (error) {
+                console.error('Webhook processing error:', {
+                    error: error instanceof Error ? {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack
+                    } : error,
+                    body: req.body
                 });
-                return;
             }
-
-            // Mark as processed immediately before any async operations
-            processedWebhookEvents.add(eventId);
-            
-            // Cleanup old events after 5 minutes
-            setTimeout(() => {
-                if (processedWebhookEvents.has(eventId)) {
-                    processedWebhookEvents.delete(eventId);
-                }
-            }, 5 * 60 * 1000);
-
-            // Process webhook
-            await handleWebhook({ body: req.body });
-
-        } catch (error) {
-            console.error('Webhook processing error:', {
-                timestamp: new Date().toISOString(),
-                error: error instanceof Error ? {
-                    name: error.name,
-                    message: error.message,
-                    stack: error.stack
-                } : error,
-                webhookBody: req.body
-            });
+            return;
         }
-    }
 
-    // Health check endpoint
-    if (req.method === 'GET' && req.url === '/api') {
-        return res.status(200).json({ status: 'ok', message: 'Bot API is running' });
-    }
+        // Handle unsupported methods
+        return res.status(405).json({ error: 'Method not allowed' });
 
-    // Return 405 for unsupported methods
-    return res.status(405).json({ error: 'Method not allowed' });
+    } catch (error) {
+        console.error('Server error:', {
+            error: error instanceof Error ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            } : error
+        });
+        return res.status(500).json({ error: 'Internal server error' });
+    }
 }
 
-// Bot configuration from environment variables
+// Export configuration
 export const config = {
-    NEYNAR_API_KEY: process.env.NEYNAR_API_KEY || '',
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
-    SIGNER_UUID: process.env.SIGNER_UUID || '',
-    BOT_USERNAME: process.env.BOT_USERNAME || '',
-    BOT_FID: process.env.BOT_FID || '',
-    WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || ''
+    api: {
+        bodyParser: false // Disable automatic body parsing to handle it manually
+    }
 };
