@@ -10,39 +10,7 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
-// Request logging and parsing middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-  let rawBody = '';
-  
-  req.on('data', chunk => {
-    rawBody += chunk;
-  });
-
-  req.on('end', () => {
-    (req as any).rawBody = rawBody;
-    
-    console.log('Request received:', {
-      timestamp: new Date().toISOString(),
-      method: req.method,
-      path: req.path,
-      headers: req.headers,
-      contentType: req.headers['content-type'],
-      rawBody: rawBody
-    });
-
-    if (rawBody && req.headers['content-type']?.includes('application/json')) {
-      try {
-        req.body = JSON.parse(rawBody);
-        console.log('Parsed JSON body:', req.body);
-      } catch (e) {
-        console.error('Failed to parse JSON body:', e);
-      }
-    }
-    next();
-  });
-});
-
-// Body parsing middleware
+// Configure body parsing middleware first
 app.use(express.json({
   limit: '10mb',
   verify: (req: Request, _res: Response, buf: Buffer) => {
@@ -50,12 +18,24 @@ app.use(express.json({
   }
 }));
 
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
 app.use(express.urlencoded({ 
   extended: true, 
   limit: '10mb' 
 }));
+
+// Request logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  console.log('Request received:', {
+    timestamp: new Date().toISOString(),
+    method: req.method,
+    path: req.path,
+    headers: req.headers,
+    contentType: req.headers['content-type'],
+    body: req.body,
+    rawBody: (req as any).rawBody
+  });
+  next();
+});
 
 // Health check endpoint
 app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
@@ -68,34 +48,47 @@ app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
 
 // Webhook handler
 const webhookHandler = async (req: Request | VercelRequest, res: Response | VercelResponse) => {
-  const timestamp = new Date().toISOString();
-  
   // Send 200 OK immediately to prevent retries
   res.status(200);
 
-  try {
-    console.log('Processing webhook request:', {
-      timestamp,
-      method: req.method,
-      path: req.url,
-      headers: req.headers,
-      contentType: req.headers['content-type'],
-      hasBody: !!req.body,
-      bodyKeys: req.body ? Object.keys(req.body) : [],
-      rawBody: (req as any).rawBody
-    });
+  const timestamp = new Date().toISOString();
+  console.log('Processing webhook request:', {
+    timestamp,
+    method: req.method,
+    path: req.url,
+    headers: req.headers,
+    contentType: req.headers['content-type'],
+    body: req.body
+  });
 
+  try {
     // Validate request body
-    if (!req.body || Object.keys(req.body).length === 0) {
-      const error = 'Empty or invalid request body';
-      console.warn(error, {
-        contentType: req.headers['content-type'],
-        rawBody: (req as any).rawBody
+    if (!req.body || typeof req.body !== 'object') {
+      console.warn('Invalid request body:', {
+        timestamp,
+        body: req.body,
+        contentType: req.headers['content-type']
       });
       return res.json({
         success: false,
-        error,
-        message: 'Request body must be valid JSON with type and data fields'
+        error: 'Invalid request body',
+        message: 'Request body must be a valid JSON object'
+      });
+    }
+
+    // Extract and validate webhook data
+    const { type, data } = req.body;
+
+    if (!type || !data) {
+      console.warn('Missing required fields:', {
+        timestamp,
+        type,
+        hasData: !!data
+      });
+      return res.json({
+        success: false,
+        error: 'Missing required fields',
+        message: 'Request must include "type" and "data" fields'
       });
     }
 
