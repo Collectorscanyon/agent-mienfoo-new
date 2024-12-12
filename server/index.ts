@@ -5,38 +5,63 @@ import type { Request, Response } from 'express';
 const app = express();
 const PORT = 5000;
 
-// Basic request logging
+// Detailed request logging middleware
 app.use((req: Request, res: Response, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`, {
-        headers: req.headers,
+    console.log('Request details:', {
+        timestamp: new Date().toISOString(),
+        method: req.method,
+        path: req.url,
+        contentType: req.headers['content-type'],
         body: req.body
     });
     next();
 });
 
-// Middleware to parse JSON and form-urlencoded bodies
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// Parse JSON bodies
+app.use(bodyParser.json({ strict: false }));
 
+// Parse URL-encoded bodies
+app.use(bodyParser.urlencoded({ 
+    extended: true,
+    limit: '10mb'
+}));
 
 // Health check endpoint
 app.get('/', (_req: Request, res: Response) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Webhook endpoint
+// Webhook endpoint with enhanced logging
 app.post('/webhook', (req: Request, res: Response) => {
     try {
-        console.log('Received webhook data:', req.body);
-        res.status(200).json({ message: 'Webhook received successfully' });
+        // Log the parsed request data
+        console.log('Webhook received:', {
+            timestamp: new Date().toISOString(),
+            headers: {
+                'content-type': req.headers['content-type'],
+                'content-length': req.headers['content-length']
+            },
+            body: req.body
+        });
+
+        // Send successful response
+        res.status(200).json({ 
+            status: 'success',
+            message: 'Webhook received successfully',
+            receivedData: req.body
+        });
     } catch (error) {
         console.error('Webhook error:', error);
-        // Still send 200 OK to acknowledge receipt
-        res.status(200).json({ message: 'Webhook acknowledged' });
+        // Still return 200 to acknowledge receipt
+        res.status(200).json({ 
+            status: 'acknowledged',
+            message: 'Webhook processed with errors'
+        });
     }
 });
 
-// Start the server
+// Start server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log('Ready to handle webhook requests');
 });
