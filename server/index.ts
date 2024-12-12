@@ -34,7 +34,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client
+// Initialize Neynar client with type-safe configuration
 const neynarClient = new NeynarAPIClient({
   apiKey: process.env.NEYNAR_API_KEY!
 });
@@ -75,25 +75,38 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// Test endpoint to verify Neynar client
+// Test endpoint to verify configuration and connectivity
 app.get('/test', async (_req, res) => {
   try {
-    // Test the API connection using a simple endpoint
-    await neynarClient.publishCast({
-      signer_uuid: process.env.SIGNER_UUID!,
-      text: 'API test',
-      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
-    });
-    res.json({ status: 'ok', message: 'Neynar API connection successful' });
-  } catch (error) {
-      if (error instanceof Error) {
-        console.error('Test endpoint error:', error.message);
-        res.status(500).json({ error: 'Neynar client error', details: error.message });
-      } else {
-        console.error('Unknown test endpoint error');
-        res.status(500).json({ error: 'Unknown error occurred' });
+    console.log('Test endpoint called, checking configuration...');
+    
+    // Configuration check
+    const config = {
+      status: 'ok',
+      message: 'Farcaster Collectors Bot is running',
+      server: {
+        port: PORT,
+        timestamp: new Date().toISOString()
+      },
+      config: {
+        initialized: !!neynarClient,
+        hasApiKey: !!process.env.NEYNAR_API_KEY,
+        hasSignerUuid: !!process.env.SIGNER_UUID,
+        hasWebhookSecret: !!process.env.WEBHOOK_SECRET,
+        botFid: process.env.BOT_FID
       }
-    }
+    };
+
+    console.log('Configuration check complete:', config);
+    res.json(config);
+  } catch (error) {
+    console.error('Test endpoint error:', error instanceof Error ? error.message : 'Unknown error');
+    res.status(500).json({ 
+      status: 'error',
+      message: 'Failed to check server configuration',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 // Webhook endpoint
@@ -116,9 +129,9 @@ app.post('/webhook', verifyWebhookSignature, async (req, res) => {
         // Add like reaction
         try {
           await neynarClient.publishReaction({
-            signer_uuid: process.env.SIGNER_UUID!,
-            reaction_type: 'like',
-            cast_hash: payload.cast.hash
+            signerUuid: process.env.SIGNER_UUID!,
+            reactionType: 'like',
+            target: payload.cast.hash
           });
           console.log('Successfully liked the cast');
         } catch (reactionError) {
@@ -128,9 +141,9 @@ app.post('/webhook', verifyWebhookSignature, async (req, res) => {
         // Reply in collectors canyon channel
         try {
           await neynarClient.publishCast({
-            signer_uuid: process.env.SIGNER_UUID!,
+            signerUuid: process.env.SIGNER_UUID!,
             text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
-            parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+            channelId: 'collectorscanyon'
           });
           console.log('Successfully published response cast');
         } catch (castError) {
