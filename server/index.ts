@@ -22,8 +22,12 @@ app.use(express.json());
 
 // Initialize Neynar client with proper configuration
 const neynar = new NeynarAPIClient({ 
-  apiKey: process.env.NEYNAR_API_KEY || '' 
+  apiKey: process.env.NEYNAR_API_KEY || '',
+  signer: { signer_uuid: process.env.SIGNER_UUID || '' }
 });
+
+// Log initialization status
+console.log('🔑 Neynar client initialized with API key:', !!process.env.NEYNAR_API_KEY);
 
 // Type definitions for webhook payload
 interface WebhookPayload {
