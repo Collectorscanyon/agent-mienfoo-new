@@ -1,11 +1,10 @@
 import express from 'express';
 import bodyParser from 'body-parser';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 const app = express();
-const PORT = 5000;
 
-// Detailed request logging middleware
+// Detailed request logging
 app.use((req: Request, res: Response, next) => {
     console.log('Request details:', {
         timestamp: new Date().toISOString(),
@@ -17,8 +16,11 @@ app.use((req: Request, res: Response, next) => {
     next();
 });
 
-// Parse JSON bodies
-app.use(bodyParser.json({ strict: false }));
+// Parse JSON bodies (with less strict parsing)
+app.use(bodyParser.json({ 
+    strict: false,
+    limit: '10mb'
+}));
 
 // Parse URL-encoded bodies
 app.use(bodyParser.urlencoded({ 
@@ -26,12 +28,24 @@ app.use(bodyParser.urlencoded({
     limit: '10mb'
 }));
 
+// Error handling for parsing errors
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof SyntaxError) {
+        console.error('Parse error:', err);
+        return res.status(200).json({ 
+            status: 'error',
+            message: 'Invalid request format'
+        });
+    }
+    next(err);
+});
+
 // Health check endpoint
 app.get('/', (_req: Request, res: Response) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Webhook endpoint with enhanced logging
+// Webhook endpoint with enhanced logging and error handling
 app.post('/webhook', (req: Request, res: Response) => {
     try {
         // Log the parsed request data
@@ -61,7 +75,11 @@ app.post('/webhook', (req: Request, res: Response) => {
 });
 
 // Start server
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log('Ready to handle webhook requests');
+}).on('error', (error) => {
+    console.error('Server failed to start:', error);
+    process.exit(1);
 });
