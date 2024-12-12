@@ -10,54 +10,32 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
-// Enhanced request logging middleware (before parsing)
+// Request logging and parsing middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
-  let data = '';
+  let rawBody = '';
+  
   req.on('data', chunk => {
-    data += chunk;
+    rawBody += chunk;
   });
-  req.on('end', () => {
-    try {
-      if (data) {
-        const parsed = JSON.parse(data);
-        console.log('Incoming request:', {
-          timestamp: new Date().toISOString(),
-          method: req.method,
-          path: req.path,
-          headers: req.headers,
-          body: parsed
-        });
-      }
-    } catch (e) {
-      console.log('Raw request body (non-JSON):', data);
-    }
-    next();
-  });
-});
 
-// Enhanced request logging middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-  let rawData = '';
-  req.setEncoding('utf8');
-  
-  req.on('data', (chunk) => {
-    rawData += chunk;
-  });
-  
   req.on('end', () => {
-    if (rawData) {
+    (req as any).rawBody = rawBody;
+    
+    console.log('Request received:', {
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      headers: req.headers,
+      contentType: req.headers['content-type'],
+      rawBody: rawBody
+    });
+
+    if (rawBody && req.headers['content-type']?.includes('application/json')) {
       try {
-        const parsedData = JSON.parse(rawData);
-        (req as any).rawBody = rawData;
-        req.body = parsedData;
-        console.log('Parsed request body:', {
-          path: req.path,
-          method: req.method,
-          headers: req.headers,
-          body: parsedData
-        });
+        req.body = JSON.parse(rawBody);
+        console.log('Parsed JSON body:', req.body);
       } catch (e) {
-        console.error('Error parsing request body:', e);
+        console.error('Failed to parse JSON body:', e);
       }
     }
     next();
@@ -71,6 +49,8 @@ app.use(express.json({
     (req as any).rawBody = buf.toString();
   }
 }));
+
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(express.urlencoded({ 
   extended: true, 
@@ -90,45 +70,51 @@ app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
 const webhookHandler = async (req: Request | VercelRequest, res: Response | VercelResponse) => {
   const timestamp = new Date().toISOString();
   
+  // Send 200 OK immediately to prevent retries
+  res.status(200);
+
   try {
-    // Enhanced request logging
-    console.log('Webhook received:', {
+    console.log('Processing webhook request:', {
       timestamp,
       method: req.method,
       path: req.url,
       headers: req.headers,
-      body: req.body,
+      contentType: req.headers['content-type'],
+      hasBody: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : [],
       rawBody: (req as any).rawBody
     });
 
-    // Always send 200 OK immediately to prevent retries
-    res.status(200);
-
     // Validate request body
     if (!req.body || Object.keys(req.body).length === 0) {
-      console.warn('Empty webhook body received');
+      const error = 'Empty or invalid request body';
+      console.warn(error, {
+        contentType: req.headers['content-type'],
+        rawBody: (req as any).rawBody
+      });
       return res.json({
-        error: 'Empty request body',
-        message: 'Request body cannot be empty'
+        success: false,
+        error,
+        message: 'Request body must be valid JSON with type and data fields'
       });
     }
 
-    // Extract webhook data
+    // Extract and validate webhook data
     const { type, data } = req.body;
     
-    console.log('Processing webhook:', {
+    console.log('Webhook payload:', {
       timestamp,
       type,
       data: JSON.stringify(data, null, 2)
     });
 
+    // Handle Farcaster cast.created events
     if (type === 'cast.created' && data) {
       // Process webhook asynchronously
       handleWebhook(req.body).catch(err => {
-        console.error('Error processing webhook:', err);
+        console.error('Error in webhook processing:', err);
       });
       
-      // Return success immediately
       return res.json({
         success: true,
         message: 'Webhook accepted for processing',
@@ -136,7 +122,7 @@ const webhookHandler = async (req: Request | VercelRequest, res: Response | Verc
       });
     }
 
-    // For test requests or unknown types
+    // Handle test requests
     return res.json({
       success: true,
       message: 'Webhook received',
@@ -146,18 +132,20 @@ const webhookHandler = async (req: Request | VercelRequest, res: Response | Verc
     });
 
   } catch (error) {
-    console.error('Webhook processing error:', {
+    console.error('Error in webhook handler:', {
       timestamp,
       error: error instanceof Error ? {
         name: error.name,
         message: error.message,
         stack: error.stack
-      } : error
+      } : error,
+      body: req.body,
+      rawBody: (req as any).rawBody
     });
 
-    // Still return 200 to prevent retries
-    res.json({
-      error: 'Error processing webhook',
+    return res.json({
+      success: false,
+      error: 'Webhook processing error',
       message: error instanceof Error ? error.message : 'Unknown error',
       timestamp
     });
