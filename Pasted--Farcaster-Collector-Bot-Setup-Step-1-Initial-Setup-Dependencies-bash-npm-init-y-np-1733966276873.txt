@@ -1,0 +1,104 @@
+# Farcaster Collector Bot Setup
+
+## Step 1: Initial Setup & Dependencies
+```bash
+npm init -y
+npm install @neynar/nodejs-sdk express dotenv
+```
+
+## Step 2: Environment Setup
+Add to Replit Secrets:
+```
+NEYNAR_API_KEY=your_key
+SIGNER_UUID=your_uuid
+BOT_FID=834885
+```
+
+## Step 3: Create Basic Server
+```typescript
+// server/index.ts
+import express from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+
+// Initialize Neynar client
+const neynar = new NeynarAPIClient({ apiKey: process.env.NEYNAR_API_KEY || '' });
+
+// Webhook endpoint
+app.post('/webhook', async (req, res) => {
+  try {
+    const { type, cast } = req.body;
+    console.log('Webhook received:', { type });
+
+    // Handle mentions
+    if (type === 'cast.created' && cast.mentions?.some(m => m.fid === '834885')) {
+      await handleMention(cast);
+    }
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+async function handleMention(cast) {
+  try {
+    // Like the mention
+    await neynar.reactToCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      reaction_type: 'like',
+      cast_hash: cast.hash
+    });
+
+    // Reply to mention
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text: `Hey @${cast.author.username}! 👋`,
+      parent: cast.hash
+    });
+  } catch (error) {
+    console.error('Error handling mention:', error);
+  }
+}
+
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Bot running on port ${PORT}`);
+});
+```
+
+## Step 4: Add Channel Posts
+```typescript
+// Add to server/index.ts
+async function postToCollectorsCanyon(message: string) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text: message,
+      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+    });
+  } catch (error) {
+    console.error('Error posting to channel:', error);
+  }
+}
+```
+
+## Testing Steps:
+1. Start the server
+2. Check logs for successful startup
+3. Test mention by tagging @mienfoo
+4. Verify bot likes and replies
+5. Test channel posting
+
+## Features to Add Later:
+1. OpenAI integration
+2. More complex responses
+3. Advanced channel features
+4. Automated posts
+
+Would you like me to provide more specific implementation details for any of these steps?
