@@ -62,9 +62,15 @@ app.get('/', (_req: Request, res: Response) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Webhook endpoint with enhanced mention handling
+// Track processed webhook events
+const processedWebhookEvents = new Set<string>();
+
+// Webhook endpoint with enhanced mention handling and proper response codes
 app.post('/webhook', async (req: Request, res: Response) => {
     try {
+        // Send 200 OK immediately to prevent retries
+        res.status(200).send('OK');
+        
         // Enhanced request logging
         console.log('Webhook request received:', {
             timestamp: new Date().toISOString(),
@@ -75,10 +81,32 @@ app.post('/webhook', async (req: Request, res: Response) => {
 
         const { type, data } = req.body;
         
-        // Process webhook synchronously before responding
+        // Early validation
+        if (!type || !data || type !== 'cast.created' || !data.hash) {
+            console.log('Invalid webhook payload:', { type, hasData: !!data });
+            return;
+        }
+
+        // Deduplication check using cast hash
+        const eventId = `${type}-${data.hash}`;
+        if (processedWebhookEvents.has(eventId)) {
+            console.log('Skipping duplicate webhook event:', {
+                eventId,
+                timestamp: new Date().toISOString()
+            });
+            return;
+        }
+
+        // Mark as processed immediately
+        processedWebhookEvents.add(eventId);
+        
+        // Cleanup old events after 10 minutes
+        setTimeout(() => processedWebhookEvents.delete(eventId), 10 * 60 * 1000);
+
+        // Process webhook
         if (type === 'cast.created') {
             const cast = data;
-            console.log('Processing cast:', {
+            console.log('Processing new cast:', {
                 hash: cast.hash,
                 author: cast.author?.username,
                 text: cast.text,
@@ -173,6 +201,7 @@ app.post('/webhook', async (req: Request, res: Response) => {
             }
         }
     } catch (error) {
+        // Log error but don't send response (already sent 200 OK)
         console.error('Webhook processing error:', {
             timestamp: new Date().toISOString(),
             error: error instanceof Error ? {
@@ -182,9 +211,20 @@ app.post('/webhook', async (req: Request, res: Response) => {
             } : error,
             webhookBody: req.body
         });
-        // Already sent 200 OK, just log the error
+    } finally {
+        // Ensure any cleanup happens here
+        if (!res.headersSent) {
+            res.status(200).send('OK');
+        }
     }
 });
+
+// Cleanup old processed events periodically (every hour)
+setInterval(() => {
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    console.log('Cleaning up old processed webhook events');
+    processedWebhookEvents.clear();
+}, 60 * 60 * 1000);
 
 // Start server
 const { PORT } = config;
