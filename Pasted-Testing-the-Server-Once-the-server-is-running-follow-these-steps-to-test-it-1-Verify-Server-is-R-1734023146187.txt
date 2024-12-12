@@ -1,0 +1,86 @@
+Testing the Server
+Once the server is running, follow these steps to test it:
+
+1. Verify Server is Running
+Ensure the console logs indicate the server started:
+
+plaintext
+Copy code
+Server running on http://0.0.0.0:5000
+Ready to handle webhook requests
+Use a browser or tool like curl to hit the health check endpoint:
+
+bash
+Copy code
+curl http://localhost:5000
+Expected Response:
+
+json
+Copy code
+{ "status": "ok", "message": "Server is running" }
+2. Test Webhook Endpoint
+Using Invoke-RestMethod in PowerShell or curl:
+
+Send a POST request to /webhook:
+
+powershell
+Copy code
+Invoke-RestMethod -Uri "https://<ngrok-url>.ngrok-free.app/webhook" -Method POST -Body '{"test":true}' -ContentType "application/json"
+Replace <ngrok-url> with your actual tunnel URL.
+
+Or using curl:
+
+bash
+Copy code
+curl -X POST -H "Content-Type: application/json" -d '{"test":true}' https://<ngrok-url>.ngrok-free.app/webhook
+Expected Logs:
+
+plaintext
+Copy code
+Webhook received: {
+    timestamp: '2024-12-12T17:15:00.000Z',
+    method: 'POST',
+    path: '/webhook',
+    headers: {
+        'content-type': 'application/json',
+        'content-length': '13',
+        'user-agent': 'curl/7.x.x',
+        'x-neynar-signature': undefined
+    },
+    body: { test: true },
+    query: {}
+}
+Expected Response:
+
+json
+Copy code
+{
+    "status": "success",
+    "message": "Webhook received successfully",
+    "receivedData": { "test": true }
+}
+Debugging Issues
+If you encounter errors like 502 Bad Gateway or 400 Bad Request:
+
+Ngrok Dashboard:
+
+Check the ngrok logs (http://127.0.0.1:4040) for incoming requests.
+Look for potential issues with the forwarded traffic.
+Request Body Parsing:
+
+Ensure the Content-Type header matches the payload format.
+If req.body is undefined, the issue might be with the body-parser middleware setup.
+Replit Console Logs:
+
+Review logs in Replit for additional error messages.
+Localhost Testing:
+
+Test with curl or a REST client (Postman, Insomnia) directly against http://localhost:5000/webhook to isolate issues with the local server.
+Next Steps
+Test the webhook flow end-to-end using these steps.
+If issues persist, share the server logs and ngrok dashboard details to further troubleshoot.
+
+
+
+
+

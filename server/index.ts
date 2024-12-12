@@ -1,8 +1,23 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import type { Request, Response, NextFunction } from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { generateBotResponse } from './bot/openai';
+import { config } from './config';
 
 const app = express();
+
+// Initialize Neynar client
+const neynar = new NeynarAPIClient({ 
+    apiKey: config.NEYNAR_API_KEY,
+    configuration: {
+        baseOptions: {
+            headers: {
+                "x-neynar-api-key": config.NEYNAR_API_KEY
+            }
+        }
+    }
+});
 
 // Detailed request logging
 app.use((req: Request, res: Response, next) => {
@@ -45,32 +60,56 @@ app.get('/', (_req: Request, res: Response) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Webhook endpoint with enhanced logging and error handling
-app.post('/webhook', (req: Request, res: Response) => {
+// Webhook endpoint with mention handling and OpenAI integration
+app.post('/webhook', async (req: Request, res: Response) => {
     try {
-        // Log the parsed request data
         console.log('Webhook received:', {
             timestamp: new Date().toISOString(),
-            headers: {
-                'content-type': req.headers['content-type'],
-                'content-length': req.headers['content-length']
-            },
             body: req.body
         });
 
-        // Send successful response
-        res.status(200).json({ 
-            status: 'success',
-            message: 'Webhook received successfully',
-            receivedData: req.body
-        });
+        const { type, cast } = req.body;
+
+        // Send immediate acknowledgment
+        res.status(200).json({ status: 'success', message: 'Webhook received' });
+
+        if (type === 'cast.created') {
+            // Check for mentions using both FID and username
+            const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
+                              cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
+            
+            if (isMentioned) {
+                console.log('Bot mention detected in cast:', cast.text);
+                
+                try {
+                    // Like the mention
+                    await neynar.publishReaction({
+                        signerUuid: config.SIGNER_UUID,
+                        reactionType: 'like',
+                        target: cast.hash
+                    });
+
+                    // Generate and send response
+                    const cleanedMessage = cast.text.replace(new RegExp(`@${config.BOT_USERNAME}`, 'i'), '').trim();
+                    const response = await generateBotResponse(cleanedMessage);
+                    
+                    // Reply in the collectors canyon channel
+                    await neynar.publishCast({
+                        signerUuid: config.SIGNER_UUID,
+                        text: `@${cast.author.username} ${response}`,
+                        parent: cast.hash,
+                        channelId: 'collectorscanyon'
+                    });
+
+                    console.log('Successfully responded to mention');
+                } catch (error) {
+                    console.error('Error handling mention:', error);
+                }
+            }
+        }
     } catch (error) {
         console.error('Webhook error:', error);
-        // Still return 200 to acknowledge receipt
-        res.status(200).json({ 
-            status: 'acknowledged',
-            message: 'Webhook processed with errors'
-        });
+        // Already sent 200 OK, just log the error
     }
 });
 
@@ -78,7 +117,7 @@ app.post('/webhook', (req: Request, res: Response) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
-    console.log('Ready to handle webhook requests');
+    console.log('Ready to handle mentions and cast in collectors canyon');
 }).on('error', (error) => {
     console.error('Server failed to start:', error);
     process.exit(1);
