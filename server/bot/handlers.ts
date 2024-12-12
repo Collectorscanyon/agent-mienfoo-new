@@ -8,13 +8,18 @@ const neynar = new NeynarAPIClient({
   apiKey: config.NEYNAR_API_KEY
 });
 
-// Simple set for strict deduplication by cast hash
-const processedCastHashes = new Set<string>();
+// Map for tracking processed casts with timestamps
+const processedCasts = new Map<string, number>();
 
-// Cleanup old hashes periodically (every hour)
+// Cleanup old entries periodically (every 30 minutes)
 setInterval(() => {
-  processedCastHashes.clear();
-}, 60 * 60 * 1000);
+  const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+  for (const [hash, timestamp] of processedCasts.entries()) {
+    if (timestamp < thirtyMinutesAgo) {
+      processedCasts.delete(hash);
+    }
+  }
+}, 5 * 60 * 1000);
 
 function isBotMessage(text: string, author: any): boolean {
   if (!text || !author) return false;
@@ -28,6 +33,13 @@ function isBotMessage(text: string, author: any): boolean {
 
 export async function handleWebhook(event: any) {
   try {
+    // Log webhook details for debugging
+    console.log('Webhook request received:', {
+      timestamp: new Date().toISOString(),
+      headers: event.headers,
+      body: event.body
+    });
+
     if (!event?.type || !event?.data) {
       console.log('Invalid webhook event structure');
       return;
@@ -40,26 +52,28 @@ export async function handleWebhook(event: any) {
       return;
     }
 
-    // Early exit for bot's own messages
+    // Strict deduplication by cast hash with timestamp
+    const now = Date.now();
+    if (processedCasts.has(cast.hash)) {
+      console.log('Duplicate cast detected, skipping:', {
+        hash: cast.hash,
+        author: cast.author?.username,
+        processedAt: new Date(processedCasts.get(cast.hash)!).toISOString()
+      });
+      return;
+    }
+
+    // Early exit for bot's own messages - check before any processing
     if (isBotMessage(cast.text, cast.author)) {
       console.log('Skipping bot\'s own message:', {
         hash: cast.hash,
-        author: cast.author.username
+        author: cast.author?.username
       });
       return;
     }
 
-    // Strict deduplication by cast hash
-    if (processedCastHashes.has(cast.hash)) {
-      console.log('Duplicate cast detected, skipping:', {
-        hash: cast.hash,
-        author: cast.author.username
-      });
-      return;
-    }
-
-    // Mark as processed immediately
-    processedCastHashes.add(cast.hash);
+    // Mark as processed immediately with timestamp
+    processedCasts.set(cast.hash, now);
 
     // Check for bot mentions
     const isMentioned = (
