@@ -67,10 +67,10 @@ const processedWebhookEvents = new Set<string>();
 
 // Webhook endpoint with enhanced mention handling and proper response codes
 app.post('/webhook', async (req: Request, res: Response) => {
+    // Send 200 OK immediately to prevent retries
+    res.status(200).send('OK');
+
     try {
-        // Send 200 OK immediately to prevent retries
-        res.status(200).send('OK');
-        
         // Enhanced request logging
         console.log('Webhook request received:', {
             timestamp: new Date().toISOString(),
@@ -87,21 +87,28 @@ app.post('/webhook', async (req: Request, res: Response) => {
             return;
         }
 
-        // Deduplication check using cast hash
-        const eventId = `${type}-${data.hash}`;
+        // Comprehensive deduplication check
+        const eventId = `${type}-${data.hash}-${data.author?.username}`;
         if (processedWebhookEvents.has(eventId)) {
             console.log('Skipping duplicate webhook event:', {
                 eventId,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                hash: data.hash,
+                author: data.author?.username
             });
             return;
         }
 
-        // Mark as processed immediately
+        // Mark as processed immediately before any async operations
         processedWebhookEvents.add(eventId);
         
-        // Cleanup old events after 10 minutes
-        setTimeout(() => processedWebhookEvents.delete(eventId), 10 * 60 * 1000);
+        // Cleanup old events after 5 minutes to prevent memory growth
+        setTimeout(() => {
+            if (processedWebhookEvents.has(eventId)) {
+                console.log('Cleaning up processed event:', eventId);
+                processedWebhookEvents.delete(eventId);
+            }
+        }, 5 * 60 * 1000);
 
         // Process webhook
         if (type === 'cast.created') {
