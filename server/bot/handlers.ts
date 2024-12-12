@@ -309,56 +309,17 @@ async function generateTextResponse(text: string): Promise<string> {
 
 const processedCastHashes = new Set<string>(); // Reintroduced from original code
 
-export async function engageWithChannelContent() {
-  try {
-    const response = await neynar.searchCasts({
-      q: "collectorscanyon",
-      channelId: "collectorscanyon",
-      limit: 20
-    });
+// Removed automatic channel engagement functionality to prevent duplicate responses
+// and focus solely on webhook-driven interactions
 
-    if (!response?.result?.casts) {
-      return;
-    }
+// export async function engageWithChannelContent() {
+//   // Functionality removed to prevent duplicate responses
+// }
 
-    for (const cast of response.result.casts) {
-      // Skip bot's own messages and processed casts
-      if (isBotMessage(cast) || processedCastHashes.has(cast.hash)) {
-        continue;
-      }
+// function isCollectionRelatedContent(text: string): boolean {
+//   // Helper function removed as part of channel engagement cleanup
+//   return false;
+// }
 
-      if (isCollectionRelatedContent(cast.text)) {
-        try {
-          await neynar.publishReaction({
-            signerUuid: config.SIGNER_UUID,
-            reactionType: 'like',
-            target: cast.hash
-          });
-          processedCastHashes.add(cast.hash);
-        } catch (error) {
-          console.error('Error liking cast:', error);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error engaging with channel content:', error);
-  }
-}
-
-function isCollectionRelatedContent(text: string): boolean {
-  if (!text) return false;
-  
-  const keywords = [
-    'collect', 'rare', 'vintage', 'limited edition',
-    'first edition', 'mint condition', 'graded', 'sealed',
-    'cards', 'trading cards', 'figures', 'comics',
-    'manga', 'coins', 'stamps', 'antiques', 'toys',
-    'memorabilia', 'artwork'
-  ];
-  
-  text = text.toLowerCase();
-  return keywords.some(keyword => text.includes(keyword));
-}
-
-// Start periodic engagement
-setInterval(engageWithChannelContent, 5 * 60 * 1000);
+// Disabled periodic channel engagement to prevent duplicate responses
+// setInterval(engageWithChannelContent, 5 * 60 * 1000);

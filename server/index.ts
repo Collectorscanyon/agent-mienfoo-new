@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import type { Request, Response, NextFunction } from 'express';
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from './config';
-import { handleWebhook, engageWithChannelContent } from './bot/handlers';
+import { handleWebhook } from './bot/handlers';
 
 // Initialize OpenAI later to prevent startup issues
 let generateBotResponse: (message: string) => Promise<string>;
@@ -220,10 +220,7 @@ createChannelCast("Greetings, fellow collectors! Your wise friend Mienfoo is her
         hasSignerUuid: !!config.SIGNER_UUID
     });
 
-// Immediately start engaging with channel content
-engageWithChannelContent()
-  .then(() => console.log('Initial channel engagement complete'))
-  .catch(error => console.error('Failed initial channel engagement:', error));
+console.log('Bot is ready to handle webhook events');
 }).on('error', (error) => {
     console.error('Server failed to start:', error);
     process.exit(1);
