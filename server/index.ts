@@ -1,18 +1,20 @@
 import express from 'express';
-import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import { config } from './config';
 import cors from 'cors';
 
 const app = express();
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client
-const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
+// Initialize Neynar client with v2 configuration
+const neynarConfig = new Configuration({
+  apiKey: config.NEYNAR_API_KEY,
+});
 
-// Request logging
+const neynar = new NeynarAPIClient(neynarConfig);
+
+// Request logging middleware
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   if (req.method === 'POST') {
@@ -21,43 +23,51 @@ app.use((req, res, next) => {
   next();
 });
 
-// Webhook endpoint
+// Webhook handler
 app.post('/webhook', async (req, res) => {
   try {
     const { type, cast } = req.body;
-    console.log('Received webhook:', { type, cast });
+    console.log('Webhook received:', {
+      type,
+      cast: cast ? {
+        text: cast.text,
+        author: cast.author?.username,
+        mentions: cast.mentions
+      } : null
+    });
 
     if (type === 'cast.created' && cast) {
-      // Check for bot mentions
-      const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID);
+      // Check for mentions of our bot
+      const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
+                         cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
 
       if (isMentioned) {
-        console.log('Bot mention detected, processing...');
-        
+        console.log('Processing mention from:', cast.author.username);
+
         try {
-          // Like the mention
+          // Add like reaction
           await neynar.reactToCast({
             signer_uuid: config.SIGNER_UUID,
             reaction_type: 'like',
             cast_hash: cast.hash
           });
+          console.log('Added like reaction');
 
-          // Reply in the collectors channel
+          // Reply to the mention
           await neynar.publishCast({
             signer_uuid: config.SIGNER_UUID,
-            text: `Hey @${cast.author.username}! 👋 Let's talk about collectibles!`,
+            text: `Hey @${cast.author.username}! 👋 Let's talk about collectibles! #CollectorsCanyonClub`,
             parent: cast.hash,
             channel_id: 'collectorscanyon'
           });
-          
-          console.log('Successfully processed mention');
+          console.log('Published reply in collectors canyon');
         } catch (error) {
           console.error('Error processing mention:', error);
         }
       }
     }
 
-    res.json({ status: 'success' });
+    res.status(200).json({ status: 'success' });
   } catch (error) {
     console.error('Webhook error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -71,13 +81,21 @@ app.get('/health', (_req, res) => {
     config: {
       hasNeynarKey: !!config.NEYNAR_API_KEY,
       hasSignerUuid: !!config.SIGNER_UUID,
-      botFid: config.BOT_FID
+      botFid: config.BOT_FID,
+      botUsername: config.BOT_USERNAME,
+      channelId: 'collectorscanyon'
     }
   });
 });
 
 const PORT = config.PORT || 5000;
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🤖 Bot server running on port ${PORT}`);
   console.log('🎯 Ready for mentions and channel posts');
+  console.log('ℹ️ Bot info:', {
+    username: config.BOT_USERNAME,
+    fid: config.BOT_FID,
+    channel: 'collectorscanyon'
+  });
 });
