@@ -2,6 +2,9 @@ import OpenAI from 'openai';
 import { config } from '../config';
 
 let openai: OpenAI;
+// Simple in-memory cache for responses
+const responseCache = new Map<string, { response: string; timestamp: number }>();
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes cache TTL
 try {
   openai = new OpenAI({
     apiKey: config.OPENAI_API_KEY
@@ -46,6 +49,15 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
     const cleanedMessage = userMessage.trim();
     console.log('Cleaned message:', cleanedMessage);
 
+    // Check cache first
+    const cacheKey = cleanedMessage.toLowerCase().trim();
+    const cachedResponse = responseCache.get(cacheKey);
+    
+    if (cachedResponse && (Date.now() - cachedResponse.timestamp) < CACHE_TTL) {
+      console.log('Using cached response for:', cleanedMessage);
+      return cachedResponse.response;
+    }
+
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
@@ -54,15 +66,22 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
         { role: "user", content: cleanedMessage }
       ],
       max_tokens: 150,
-      temperature: 0.8,
-      presence_penalty: 0.6,
-      frequency_penalty: 0.5
+      temperature: 0.7, // Slightly reduced for more consistent responses
+      presence_penalty: 0.3, // Reduced to prevent over-penalization
+      frequency_penalty: 0.3,
+      user: cleanedMessage.slice(0, 64) // Add user identifier for better rate limit tracking
     });
-
+    
     const response = completion.choices[0]?.message?.content;
     if (!response) {
       throw new Error('No response generated');
     }
+    
+    // Cache the response
+    responseCache.set(cacheKey, {
+      response,
+      timestamp: Date.now()
+    });
 
     // Ensure response ends with hashtag if not present
     const formattedResponse = response.includes('#CollectorsCanyonClub') 
@@ -79,29 +98,63 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
       timestamp: new Date().toISOString()
     });
 
-    // Create engaging fallback responses based on error type
+    // Enhanced fallback responses with context categories
     const fallbackResponses = {
-      rateLimit: [
-        "🥋 Even a wise collector needs rest! Tell me about your collection while I meditate. #CollectorsCanyonClub",
-        "📜 Ancient wisdom says: take breaks to appreciate what you have! Share your latest find? #CollectorsCanyonClub",
-        "⏳ Taking a brief pause to center my chi! What treasures have you discovered lately? #CollectorsCanyonClub"
-      ],
-      default: [
-        "🎭 A collector's journey is full of surprises! What brings you to our canyon today? #CollectorsCanyonClub",
-        "🌟 Every item tells a story! Care to share yours with this old collector? #CollectorsCanyonClub",
-        "🏺 In my years of collecting, I've learned that conversation is the greatest treasure! #CollectorsCanyonClub"
-      ]
+      rateLimit: {
+        greeting: [
+          "🥋 Ah, taking a brief meditation break! Tell me about your day in the collecting world! #CollectorsCanyonClub",
+          "📜 Wisdom teaches us to pause and reflect. What treasures caught your eye today? #CollectorsCanyonClub"
+        ],
+        collection: [
+          "⏳ My chi needs realignment! While I meditate, share your favorite piece? #CollectorsCanyonClub",
+          "🎭 Every collector has a story! What's yours while I gather my energy? #CollectorsCanyonClub"
+        ],
+        question: [
+          "🌟 A wise collector pauses to think deeply. Let me meditate on this! #CollectorsCanyonClub",
+          "🏺 Ancient wisdom coming soon! Taking a moment to center myself. #CollectorsCanyonClub"
+        ]
+      },
+      default: {
+        greeting: [
+          "👋 Greetings, fellow collector! What brings you to our canyon today? #CollectorsCanyonClub",
+          "🎭 Welcome to our collector's sanctuary! Share your passion with us! #CollectorsCanyonClub"
+        ],
+        collection: [
+          "🌟 Every collection tells a story! I'd love to hear about yours! #CollectorsCanyonClub",
+          "🏺 In my years of collecting, I've learned that sharing brings joy! #CollectorsCanyonClub"
+        ],
+        question: [
+          "📚 Let me share some collector's wisdom with you soon! #CollectorsCanyonClub",
+          "🤔 A thoughtful question! Let me ponder this with care. #CollectorsCanyonClub"
+        ]
+      }
     };
 
-    // Select random response based on error type
+    // Determine message type based on content
+    const getMessageType = (message: string): 'greeting' | 'collection' | 'question' => {
+      message = message.toLowerCase();
+      if (message.includes('hi') || message.includes('hello') || message.includes('hey')) {
+        return 'greeting';
+      } else if (message.includes('?')) {
+        return 'question';
+      }
+      return 'collection';
+    };
+
+    // Select contextual fallback response
+    const messageType = getMessageType(userMessage);
     const responses = error.response?.status === 429 
-      ? fallbackResponses.rateLimit 
-      : fallbackResponses.default;
+      ? fallbackResponses.rateLimit[messageType]
+      : fallbackResponses.default[messageType];
     
     const randomResponse = responses[Math.floor(Math.random() * responses.length)];
     
-    // Log the selected fallback response
-    console.log('Using fallback response:', randomResponse);
+    // Log the selected contextual fallback response
+    console.log('Using contextual fallback response:', {
+      type: messageType,
+      response: randomResponse,
+      error: error.message
+    });
     
     return randomResponse;
   }
