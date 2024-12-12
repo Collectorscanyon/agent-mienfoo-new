@@ -35,11 +35,40 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   });
 });
 
+// Enhanced request logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  let rawData = '';
+  req.setEncoding('utf8');
+  
+  req.on('data', (chunk) => {
+    rawData += chunk;
+  });
+  
+  req.on('end', () => {
+    if (rawData) {
+      try {
+        const parsedData = JSON.parse(rawData);
+        (req as any).rawBody = rawData;
+        req.body = parsedData;
+        console.log('Parsed request body:', {
+          path: req.path,
+          method: req.method,
+          headers: req.headers,
+          body: parsedData
+        });
+      } catch (e) {
+        console.error('Error parsing request body:', e);
+      }
+    }
+    next();
+  });
+});
+
 // Body parsing middleware
 app.use(express.json({
   limit: '10mb',
   verify: (req: Request, _res: Response, buf: Buffer) => {
-    (req as any).rawBody = buf;
+    (req as any).rawBody = buf.toString();
   }
 }));
 
@@ -62,59 +91,60 @@ const webhookHandler = async (req: Request | VercelRequest, res: Response | Verc
   const timestamp = new Date().toISOString();
   
   try {
-    // Log raw request details
+    // Enhanced request logging
     console.log('Webhook received:', {
       timestamp,
       method: req.method,
       path: req.url,
       headers: req.headers,
-      rawBody: req.body
+      body: req.body,
+      rawBody: (req as any).rawBody
     });
 
-    // Validate content type
-    const contentType = req.headers['content-type'];
-    if (!contentType?.includes('application/json')) {
-      console.warn('Invalid content type:', contentType);
-      return res.status(400).json({
-        error: 'Invalid content type',
-        message: 'Content-Type must be application/json'
-      });
-    }
+    // Always send 200 OK immediately to prevent retries
+    res.status(200);
 
     // Validate request body
     if (!req.body || Object.keys(req.body).length === 0) {
       console.warn('Empty webhook body received');
-      return res.status(400).json({
+      return res.json({
         error: 'Empty request body',
         message: 'Request body cannot be empty'
       });
     }
 
-    // Validate Farcaster webhook structure
+    // Extract webhook data
     const { type, data } = req.body;
-    if (!type || !data) {
-      console.warn('Invalid webhook structure:', req.body);
-      return res.status(400).json({
-        error: 'Invalid webhook structure',
-        message: 'Request must include type and data fields'
-      });
-    }
-
+    
     console.log('Processing webhook:', {
       timestamp,
       type,
       data: JSON.stringify(data, null, 2)
     });
 
-    // Process webhook
-    await handleWebhook(req.body);
-    
-    // Send success response
-    res.status(200).json({
+    if (type === 'cast.created' && data) {
+      // Process webhook asynchronously
+      handleWebhook(req.body).catch(err => {
+        console.error('Error processing webhook:', err);
+      });
+      
+      // Return success immediately
+      return res.json({
+        success: true,
+        message: 'Webhook accepted for processing',
+        timestamp
+      });
+    }
+
+    // For test requests or unknown types
+    return res.json({
       success: true,
-      message: 'Webhook processed successfully',
-      timestamp
+      message: 'Webhook received',
+      timestamp,
+      type,
+      dataReceived: !!data
     });
+
   } catch (error) {
     console.error('Webhook processing error:', {
       timestamp,
@@ -125,8 +155,9 @@ const webhookHandler = async (req: Request | VercelRequest, res: Response | Verc
       } : error
     });
 
-    res.status(500).json({
-      error: 'Internal server error',
+    // Still return 200 to prevent retries
+    res.json({
+      error: 'Error processing webhook',
       message: error instanceof Error ? error.message : 'Unknown error',
       timestamp
     });
