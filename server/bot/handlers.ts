@@ -1,14 +1,10 @@
-import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { handleCommand } from './commands';
 import { config } from '../config';
 import { generateBotResponse } from './openai';
 
-// Initialize Neynar client with v2 configuration
-const neynarConfig = new Configuration({
-  apiKey: config.NEYNAR_API_KEY,
-});
-
-const neynar = new NeynarAPIClient(neynarConfig);
+// Initialize Neynar client
+const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
 
 // Memory store for user collections
 // Define proper types for Neynar SDK responses
@@ -89,12 +85,17 @@ export async function reply(parentHash: string, text: string) {
   try {
     console.log('Attempting to reply to cast:', { parentHash, text });
     // Add #/collectorscanyon hashtag to all messages
-    const channelText = `${text}\n#/collectorscanyon`;
+    // Format text with channel tag
+    const channelText = `${text}\n\n#/collectorscanyon`;
+    
+    // Publish the cast with proper channel integration
     const response = await neynar.publishCast({
       signerUuid: config.SIGNER_UUID,
       text: channelText,
       parent: parentHash,
-      channelId: 'collectorscanyon' // Add channel ID for /collectorscanyon
+      embeds: [{
+        url: 'https://warpcast.com/~/channel/collectorscanyon'
+      }]
     });
     console.log('Reply sent successfully:', response);
   } catch (error) {
@@ -115,8 +116,7 @@ export async function likeCast(castHash: string) {
     const response = await neynar.publishReaction({
       signerUuid: config.SIGNER_UUID,
       reactionType: 'like',
-      castHash: castHash,
-      type: 'like'
+      target: castHash
     });
     console.log('Successfully liked cast:', response);
   } catch (error) {

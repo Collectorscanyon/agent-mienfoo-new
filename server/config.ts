@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 export interface Config {
   NEYNAR_API_KEY: string;
   OPENAI_API_KEY: string;
@@ -8,45 +11,27 @@ export interface Config {
   BOT_FID: string;
 }
 
-// Type-safe config object with validation
-const validateConfig = () => {
-  const required = {
-    NEYNAR_API_KEY: 'Neynar API key for Farcaster interactions',
-    SIGNER_UUID: 'Signer UUID for Farcaster bot identity',
-    WEBHOOK_SECRET: 'Secret for verifying webhook calls',
-    OPENAI_API_KEY: 'OpenAI API key for bot responses'
+const createConfig = (): Config => {
+  const config = {
+    NEYNAR_API_KEY: process.env.NEYNAR_API_KEY || '',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+    SIGNER_UUID: process.env.SIGNER_UUID || '',
+    WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
+    PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
+    BOT_USERNAME: process.env.BOT_USERNAME || 'mienfoo',
+    BOT_FID: process.env.BOT_FID || '834885'
   };
 
-  const missing = Object.entries(required)
-    .filter(([key]) => !process.env[key])
-    .map(([key, desc]) => `${key} (${desc})`);
+  // Check required fields
+  const required = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'OPENAI_API_KEY'];
+  const missing = required.filter(key => !config[key as keyof Config]);
   
   if (missing.length > 0) {
-    console.error('Configuration Error:', `Missing required environment variables:\n${missing.join('\n')}`);
+    console.error('Missing required environment variables:', missing.join(', '));
     process.exit(1);
   }
+
+  return config;
 };
 
-// Validate on initialization
-validateConfig();
-
-export const config: Config = {
-  NEYNAR_API_KEY: process.env.NEYNAR_API_KEY!,
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
-  PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
-  SIGNER_UUID: process.env.SIGNER_UUID!,
-  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET!,
-  BOT_USERNAME: process.env.BOT_USERNAME || 'mienfoo',
-  BOT_FID: process.env.BOT_FID || ''
-};
-
-// Export individual config values with proper types
-export const {
-  NEYNAR_API_KEY,
-  OPENAI_API_KEY,
-  PORT,
-  SIGNER_UUID,
-  WEBHOOK_SECRET,
-  BOT_USERNAME,
-  BOT_FID
-} = config;
+export const config = createConfig();
