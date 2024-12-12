@@ -128,9 +128,7 @@ export async function engageWithChannelContent() {
     console.log('Checking collectors canyon channel for content to engage with');
     
     // Get recent casts from the channel
-    const response = await neynar.fetchFeed({
-      feedType: "filter",
-      filterType: "channel",
+    const response = await neynar.searchCastsByChannel({
       channelId: "collectorscanyon",
       limit: 20
     });

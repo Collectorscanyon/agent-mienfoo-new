@@ -12,7 +12,7 @@ const configSchema = z.object({
   BOT_USERNAME: z.string().default('mienfoo'),
   BOT_FID: z.string().default('834885'),
   OPENAI_API_KEY: z.string().min(1, "OpenAI API key is required"),
-  GOOGLE_VISION_CREDENTIALS: z.string().min(1, "Google Vision credentials are required")
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().min(1, "Google Vision credentials are required").default('./temporal-trees-444519-p3-76a66e099c80.json')
 });
 
 export type Config = z.infer<typeof configSchema>;
