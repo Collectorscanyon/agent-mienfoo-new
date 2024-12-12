@@ -11,13 +11,13 @@ const neynar = new NeynarAPIClient(neynarConfig);
 const CAST_INTERVAL = 8 * 60 * 60 * 1000;
 
 const messages = [
-  "What's your favorite item in your collection? Share with me! 🤔",
-  "Any exciting additions to your collection today? Let me know! 🎉",
-  "Love seeing rare finds! What's your most unique collectible? ✨",
-  "Who else is passionate about collecting? Let's chat! 🌟",
-  "What started your collecting journey? I'd love to hear your story! 📚",
-  "Show off your latest addition! What's new in your collection? 🎯",
-  "Collectors unite! What's your specialty? 🏆"
+  "👋 #/collectorscanyon What's your favorite item in your collection? Share with me! 🤔",
+  "✨ #/collectorscanyon Any exciting additions to your collection today? Let me know! 🎉",
+  "🎯 #/collectorscanyon Love seeing rare finds! What's your most unique collectible? ✨",
+  "🌟 #/collectorscanyon Who else is passionate about collecting? Let's chat! 🌟",
+  "📚 #/collectorscanyon What started your collecting journey? I'd love to hear your story! 📚",
+  "🎁 #/collectorscanyon Show off your latest addition! What's new in your collection? 🎯",
+  "🏆 #/collectorscanyon Collectors unite! What's your specialty? 🏆"
 ];
 
 export async function createDailyCast() {
@@ -26,9 +26,8 @@ export async function createDailyCast() {
     
     console.log('Creating daily cast:', randomMessage);
     await neynar.publishCast({
-      signerUuid: SIGNER_UUID,
+      signerUuid: config.SIGNER_UUID,
       text: randomMessage,
-      parent: null // Explicit null for root cast
     });
     
     console.log('Daily cast created successfully');

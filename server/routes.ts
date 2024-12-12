@@ -3,10 +3,10 @@ import { createServer, type Server } from "http";
 import crypto from 'crypto';
 import { handleMention } from './bot/handlers';
 import { initializeScheduler } from './bot/scheduler';
-import { WEBHOOK_SECRET, BOT_FID, BOT_USERNAME } from './config';
+import { config } from './config';
 
-function verifySignature(signature: string, body: string, secret: string): boolean {
-  const hmac = crypto.createHmac('sha256', secret);
+function verifySignature(signature: string, body: string): boolean {
+  const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
   const digest = hmac.update(body).digest('hex');
   return signature === digest;
 }
@@ -23,44 +23,30 @@ export function registerRoutes(app: Express): Server {
   // Webhook endpoint for Neynar
   app.post('/api/webhook', async (req, res) => {
     try {
-      console.log('Received webhook request:', {
-        headers: req.headers,
-        body: JSON.stringify(req.body, null, 2)
+      const rawBody = JSON.stringify(req.body);
+      console.log('Received webhook:', {
+        type: req.body.type,
+        text: req.body.cast?.text,
+        author: req.body.cast?.author?.username
       });
 
       // Verify webhook signature
       const signature = req.headers['x-neynar-signature'] as string;
-      const secret = WEBHOOK_SECRET;
-      
-      if (!signature || !verifySignature(signature, JSON.stringify(req.body), secret)) {
-        console.log('Webhook signature verification failed');
+      if (!signature || !verifySignature(signature, rawBody)) {
+        console.log('Invalid webhook signature');
         return res.status(401).json({ error: 'Invalid signature' });
       }
       
       const { type, cast } = req.body;
       
-      console.log('🤖 Processing webhook:', { 
-        type,
-        cast_text: cast?.text,
-        author: cast?.author?.username,
-        mentions: cast?.mentions
-      });
-
-      // Handle different webhook events
-      switch(type) {
-        case 'mention':
-        case 'cast.created':
-          // Check if the cast mentions our bot by FID or username
-          if (cast?.mentions?.includes(BOT_FID) || 
-              cast?.text?.toLowerCase().includes(`@${BOT_USERNAME.toLowerCase()}`)) {
-            console.log('Handling mention event for bot');
-            await handleMention(cast);
-          } else {
-            console.log('Cast does not mention bot, ignoring');
-          }
-          break;
-        default:
-          console.log(`Unhandled event type: ${type}`);
+      // Check for mentions or relevant casts
+      if ((type === 'mention' || type === 'cast.created') && 
+          (cast?.mentions?.some((m: any) => m.fid === config.BOT_FID) || 
+           cast?.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`))) {
+        console.log('Processing mention:', cast.text);
+        await handleMention(cast);
+      } else {
+        console.log('Skipping non-mention event:', type);
       }
 
       res.status(200).json({ status: 'success' });
