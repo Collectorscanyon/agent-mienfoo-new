@@ -2,57 +2,51 @@ import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 
 interface ExtendedRequest extends Request {
-    rawBody?: Buffer;
+    rawBody?: string;
 }
 
 const app = express();
 
-// Basic middleware for handling both JSON and raw bodies
-app.use(express.json({
-    verify: (req: ExtendedRequest, _res: Response, buf: Buffer) => {
-        req.rawBody = buf;
-    }
-}));
-app.use(express.raw({ type: '*/*' }));
+// Accept all content types and collect raw data
+app.use((req: ExtendedRequest, res: Response, next: NextFunction) => {
+    let data = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => {
+        data += chunk;
+    });
+    req.on('end', () => {
+        req.rawBody = data;
+        next();
+    });
+});
 
 // Log all requests
-app.use((req: ExtendedRequest, res: Response, next: NextFunction) => {
+app.use((req: ExtendedRequest, _res: Response, next: NextFunction) => {
     console.log('Request received:', {
         timestamp: new Date().toISOString(),
         method: req.method,
         path: req.url,
-        headers: req.headers,
-        body: req.body
+        headers: req.headers
     });
     next();
 });
 
-// Health check for ngrok
+// Root endpoint for ngrok verification
 app.get('/', (_req: Request, res: Response) => {
-    res.send('OK'); // Simple response for ngrok verification
+    res.send('OK');
 });
 
-// Webhook handler with immediate response
+// Accept any POST request to webhook
 app.post('/webhook', (req: ExtendedRequest, res: Response) => {
-    // Send immediate 200 response
-    res.status(200).send('OK');
+    // Log request details
+    console.log('Webhook received:', {
+        timestamp: new Date().toISOString(),
+        headers: req.headers,
+        rawBody: req.rawBody
+    });
     
-    // Process webhook after response
-    try {
-        // Log the webhook details
-        console.log('Webhook processed:', {
-            timestamp: new Date().toISOString(),
-            contentType: req.headers['content-type'],
-            body: req.body instanceof Buffer ? req.body.toString() : req.body,
-            rawBody: req.rawBody?.toString()
-        });
-    } catch (error) {
-        // Log error but don't send response (already sent 200)
-        console.error('Error processing webhook:', {
-            timestamp: new Date().toISOString(),
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
+    // Always respond with 200 OK
+    res.status(200).send('OK');
 });
 
 const PORT = process.env.PORT || 5000;
