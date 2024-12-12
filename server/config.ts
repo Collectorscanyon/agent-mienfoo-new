@@ -19,7 +19,7 @@ const createConfig = (): Config => {
     WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
     PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
     BOT_USERNAME: process.env.BOT_USERNAME || 'mienfoo',
-    BOT_FID: process.env.BOT_FID || '834885'
+    BOT_FID: process.env.BOT_FID || '834885' // Default FID for Mienfoo
   };
 
   // Check required fields

@@ -41,22 +41,30 @@ export async function handleMention(cast: Cast) {
       return;
     }
 
-    // Like the mention first thing
+    // First, let's log what we received
+    console.log('Processing mention details:', {
+      username,
+      content,
+      castHash: cast.hash,
+      hasCommands: content.includes('add') || content.includes('show') || content.includes('collection')
+    });
+
+    // Like the mention first
     try {
-      console.log('Liking the mention cast');
+      console.log('Attempting to like cast:', cast.hash);
       await likeCast(cast.hash);
     } catch (likeError) {
       console.error('Error liking cast:', likeError);
-      // Continue with the rest of the processing even if like fails
+      // Continue processing even if like fails
     }
 
-    // Process commands if present
+    // Check for commands
     const isCommand = content.includes('add') || 
                      content.includes('show') || 
                      content.includes('collection');
     
     if (isCommand) {
-      console.log('Handling command in mention');
+      console.log('Command detected, handling:', content);
       await handleCommand(cast, collections);
       return;
     }
@@ -91,10 +99,10 @@ export async function reply(parentHash: string, text: string) {
     
     // Publish the cast to the collectors canyon channel
     const response = await neynar.publishCast({
-      signer_uuid: config.SIGNER_UUID,
+      signerUuid: config.SIGNER_UUID,
       text: channelText,
       parent: parentHash,
-      channel_id: 'collectorscanyon' // Use correct parameter name for channel
+      channelId: 'collectorscanyon'
     });
     console.log('Reply sent successfully:', response);
   } catch (error) {

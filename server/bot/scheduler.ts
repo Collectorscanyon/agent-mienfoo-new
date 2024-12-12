@@ -24,7 +24,7 @@ export async function createDailyCast() {
     console.log('Creating daily cast:', randomMessage);
     await neynar.publishCast({
       signerUuid: config.SIGNER_UUID,
-      text: randomMessage,
+      text: `${randomMessage}\n\n/collectorscanyon`,
       channelId: 'collectorscanyon'
     });
     

@@ -39,14 +39,24 @@ export function registerRoutes(app: Express): Server {
       
       const { type, cast } = req.body;
       
-      // Check for mentions or relevant casts
-      if ((type === 'mention' || type === 'cast.created') && 
-          (cast?.mentions?.some((m: any) => m.fid === config.BOT_FID) || 
-           cast?.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`))) {
-        console.log('Processing mention:', cast.text);
+      // Enhanced mention detection
+      const isMentioned = cast?.mentions?.some((m: any) => m.fid === config.BOT_FID) || 
+                         cast?.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
+      
+      console.log('Cast analysis:', {
+        type,
+        text: cast?.text,
+        hasMentions: !!cast?.mentions?.length,
+        isBotMentioned: isMentioned,
+        botFid: config.BOT_FID,
+        botUsername: config.BOT_USERNAME
+      });
+
+      if (isMentioned) {
+        console.log('Bot mention detected, processing cast:', cast);
         await handleMention(cast);
       } else {
-        console.log('Skipping non-mention event:', type);
+        console.log('Skipping cast - no bot mention detected');
       }
 
       res.status(200).json({ status: 'success' });
