@@ -27,17 +27,17 @@ setInterval(() => {
 function isBotMessage(cast: any): boolean {
   if (!cast?.author) return false;
   
-  // Strict bot identity check
+  // Strict bot identity check - only check exact matches
   const isBotAuthor = (
     cast.author.fid?.toString() === config.BOT_FID ||
     cast.author.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
     cast.author.username?.toLowerCase() === 'mienfoo.eth'
   );
 
-  // Check if this is a response in a thread started by the bot
-  const isInBotThread = cast.thread_hash && processedThreads.has(cast.thread_hash);
+  // Only consider messages from the bot itself, not thread ownership
+  // This prevents the bot from ignoring valid mentions in threads it participated in
   
-  // Add enhanced logging
+  // Enhanced logging for debugging
   console.log('Bot message detection:', {
     timestamp: new Date().toISOString(),
     castHash: cast.hash,
@@ -45,13 +45,11 @@ function isBotMessage(cast: any): boolean {
     authorUsername: cast.author.username,
     threadHash: cast.thread_hash,
     isBotAuthor,
-    isInBotThread,
     botFid: config.BOT_FID,
     botUsername: config.BOT_USERNAME
   });
 
-  // Consider it a bot message if either condition is true
-  return isBotAuthor || isInBotThread;
+  return isBotAuthor;
 }
 
 function shouldProcessThread(cast: any): boolean {
@@ -142,11 +140,28 @@ export async function handleWebhook(event: any) {
     const castKey = `${cast.hash}-${cast.thread_hash}`;
     
     // Check if we've already processed this cast
+    if (cast?.hash && processedCastHashes.has(cast.hash)) {
+      console.log('Skipping duplicate cast:', {
+        timestamp,
+        castHash: cast.hash,
+        threadHash: cast.thread_hash,
+        reason: 'Already processed this cast hash'
+      });
+      return;
+    }
+    
+    // Add to processed set immediately
+    if (cast?.hash) {
+      processedCastHashes.add(cast.hash);
+      // Cleanup old hashes after 10 minutes to prevent memory growth
+      setTimeout(() => processedCastHashes.delete(cast.hash), 10 * 60 * 1000);
+    }
+
     if (processedThreads.has(cast.thread_hash) && processedThreads.get(cast.thread_hash)?.responses.has(cast.hash)) {
-      console.log('Skipping already processed cast:', {
+      console.log('Skipping already processed cast in thread:', {
         timestamp,
         castKey,
-        reason: 'Already processed'
+        reason: 'Already processed in this thread'
       });
       return;
     }
@@ -246,58 +261,100 @@ async function isBotMessageInChain(castHash: string, depth: number = 0): Promise
 async function handleMention(cast: any) {
   try {
     const timestamp = new Date().toISOString();
+    const castHash = cast.hash;
+    
+    // Verify we haven't already processed this mention
+    if (processedCastHashes.has(castHash)) {
+      console.log('Skipping already processed mention:', {
+        timestamp,
+        castHash,
+        reason: 'Already handled this mention'
+      });
+      return;
+    }
     
     // Enhanced mention logging
-    console.log('Processing mention:', {
+    console.log('Processing new mention:', {
       timestamp,
-      hash: cast.hash,
+      hash: castHash,
       threadHash: cast.thread_hash,
       author: cast.author.username,
       text: cast.text
     });
 
+    // Track this mention immediately
+    processedCastHashes.add(castHash);
+    
+    // Cleanup after 10 minutes
+    setTimeout(() => processedCastHashes.delete(castHash), 10 * 60 * 1000);
+
     // Like the mention
-    console.log('Attempting to like cast:', cast.hash);
+    console.log('Attempting to like cast:', castHash);
     try {
       const reaction = await neynar.publishReaction({
         signerUuid: config.SIGNER_UUID,
         reactionType: 'like',
-        target: cast.hash
+        target: castHash
       });
       console.log('Successfully liked the mention:', reaction);
     } catch (error) {
-      console.error('Error liking mention:', error);
+      console.error('Error liking mention:', error instanceof Error ? error.message : error);
+      // Continue with reply even if like fails
     }
 
-    // Generate response
-    console.log('Generating response for:', cast.text);
-    const response = await generateTextResponse(cast.text);
-    console.log('Generated response:', response);
-
-    // Send response
-    console.log('Attempting to reply to cast:', {
-      hash: cast.hash,
-      signerUuid: config.SIGNER_UUID,
-      author: cast.author.username
-    });
-
+    // Generate and send response
     try {
+      const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+      console.log('Generating response for cleaned message:', cleanedMessage);
+      
+      const response = await generateTextResponse(cleanedMessage);
+      console.log('Generated response:', response);
+
+      // Prepare and send reply
+      const replyText = `@${cast.author.username} ${response}`;
+      console.log('Sending reply:', {
+        to: cast.author.username,
+        inReplyTo: castHash,
+        text: replyText
+      });
+
       const reply = await neynar.publishCast({
         signerUuid: config.SIGNER_UUID,
-        text: `@${cast.author.username} ${response}`,
-        parent: cast.hash,
+        text: replyText,
+        parent: castHash,
         channelId: 'collectorscanyon'
       });
+      
       console.log('Reply sent successfully:', {
         replyHash: reply.cast.hash,
         timestamp: new Date().toISOString()
       });
+      
     } catch (error) {
-      console.error('Error publishing response:', error);
+      console.error('Error in response generation or reply:', {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error,
+        timestamp: new Date().toISOString()
+      });
+      throw error; // Rethrow to trigger error handling
     }
 
   } catch (error) {
-    console.error('Error handling mention:', error);
+    console.error('Fatal error handling mention:', {
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      } : error,
+      cast: {
+        hash: cast.hash,
+        author: cast.author.username,
+        text: cast.text
+      }
+    });
   }
 }
 
