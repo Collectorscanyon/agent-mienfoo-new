@@ -1,0 +1,105 @@
+// server/index.ts
+import express from "express";
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { Configuration, OpenAIApi } from 'openai';
+import cors from "cors";
+require('dotenv').config();
+
+const app = express();
+
+// Initialize APIs
+const neynar = new NeynarAPIClient({ apiKey: process.env.NEYNAR_API_KEY || '' });
+const openai = new OpenAIApi(new Configuration({
+  apiKey: process.env.OPENAI_API_KEY
+}));
+
+// Mienfoo's personality prompt
+const MIENFOO_PROMPT = `You are Mienfoo, a friendly and knowledgeable collector bot.
+Your primary focus is collectibles, trading cards, and collectible culture.
+Always maintain an enthusiastic, helpful tone.
+Keep responses concise and engaging.
+Use emojis occasionally to convey enthusiasm.
+Sign your responses with #CollectorsCanyonClub`;
+
+async function generateResponse(userMessage: string): Promise<string> {
+  try {
+    const completion = await openai.createChatCompletion({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: MIENFOO_PROMPT },
+        { role: "user", content: userMessage }
+      ],
+      max_tokens: 150
+    });
+
+    return completion.data.choices[0].message?.content || "Sorry, I couldn't process that request.";
+  } catch (error) {
+    console.error('OpenAI Error:', error);
+    return "I'm having trouble connecting to my brain right now! 😅";
+  }
+}
+
+// Webhook handler
+app.post('/webhook', async (req, res) => {
+  try {
+    const { type, cast, user } = req.body;
+    console.log('Webhook received:', { type, cast });
+
+    if (type === 'cast.created') {
+      // Handle mentions
+      if (cast.mentions?.some(m => m.fid === '834885')) {
+        // Generate AI response
+        const userMessage = cast.text.replace(/@mienfoo/i, '').trim();
+        const response = await generateResponse(userMessage);
+
+        // Reply to mention
+        await neynar.publishCast({
+          signer_uuid: process.env.SIGNER_UUID || '',
+          text: `@${cast.author.username} ${response}`,
+          parent: cast.hash
+        });
+
+        // Add like reaction
+        await neynar.reactToCast({
+          signer_uuid: process.env.SIGNER_UUID || '',
+          reaction_type: 'like',
+          cast_hash: cast.hash
+        });
+      }
+
+      // Post to collectors canyon channel if it contains specific keywords
+      if (cast.text.toLowerCase().includes('collection') || 
+          cast.text.toLowerCase().includes('card') ||
+          cast.text.toLowerCase().includes('rare')) {
+        await neynar.publishCast({
+          signer_uuid: process.env.SIGNER_UUID || '',
+          text: `💡 Interesting discussion in the main feed! Join us in /collectorscanyon to continue the conversation!\n\n${cast.text}`,
+          parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+        });
+      }
+    }
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error('Webhook Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Channel posting function
+async function postToCollectorsCanyon(message: string) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID || '',
+      text: `${message}\n\n#CollectorsCanyonClub`,
+      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+    });
+  } catch (error) {
+    console.error('Channel posting error:', error);
+  }
+}
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🤖 Bot running on port ${PORT}`);
+});

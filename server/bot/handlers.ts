@@ -1,6 +1,7 @@
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import { handleCommand } from './commands';
 import { config } from '../config';
+import { generateBotResponse } from './openai';
 
 // Initialize Neynar client with v2 configuration
 const neynarConfig = new Configuration({
@@ -64,21 +65,13 @@ export async function handleMention(cast: Cast) {
       return;
     }
 
-    // Default friendly responses
-    if (content.includes('hello') || content.includes('hi')) {
-      console.log('Responding to greeting');
-      await reply(cast.hash, 
-        `Hey @${username}! 👋 I'm Mienfoo, your friendly collector companion! Tell me about your collection!`
-      );
-    } else {
-      console.log('Sending default response');
-      await reply(cast.hash,
-        `@${username} Thanks for the mention! I love chatting about collections. Try:
-• "add [item]" to track items
-• "show collection" to see your items
-What's your favorite piece? 🌟`
-      );
-    }
+    // Generate AI response
+    console.log('Generating AI response');
+    const cleanedMessage = content.replace(/@mienfoo/i, '').trim();
+    
+    // Generate response using OpenAI
+    const response = await generateBotResponse(cleanedMessage);
+    await reply(cast.hash, `@${username} ${response}`);
   } catch (error) {
     console.error('Error handling mention:', error);
     // Log the full error for debugging
@@ -95,10 +88,13 @@ What's your favorite piece? 🌟`
 export async function reply(parentHash: string, text: string) {
   try {
     console.log('Attempting to reply to cast:', { parentHash, text });
+    // Add #/collectorscanyon hashtag to all messages
+    const channelText = `${text}\n#/collectorscanyon`;
     const response = await neynar.publishCast({
-      signer_uuid: config.SIGNER_UUID,
-      text,
-      parent: parentHash
+      signerUuid: config.SIGNER_UUID,
+      text: channelText,
+      parent: parentHash,
+      channelId: 'collectorscanyon' // Add channel ID for /collectorscanyon
     });
     console.log('Reply sent successfully:', response);
   } catch (error) {
@@ -116,10 +112,11 @@ export async function reply(parentHash: string, text: string) {
 export async function likeCast(castHash: string) {
   try {
     console.log(`Attempting to like cast: ${castHash}`);
-    const response = await neynar.reactToCast({
-      signer_uuid: config.SIGNER_UUID,
-      reaction_type: 'like',
-      cast_hash: castHash
+    const response = await neynar.publishReaction({
+      signerUuid: config.SIGNER_UUID,
+      reactionType: 'like',
+      castHash: castHash,
+      type: 'like'
     });
     console.log('Successfully liked cast:', response);
   } catch (error) {
@@ -130,7 +127,8 @@ export async function likeCast(castHash: string) {
         stack: error.stack
       });
     }
-    throw error; // Re-throw to handle at caller level if needed
+    // Don't throw the error, just log it and continue
+    // This prevents reactions from blocking the main flow
   }
 }
 
