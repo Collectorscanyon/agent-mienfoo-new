@@ -34,7 +34,7 @@ Response style:
 - Use martial arts/wisdom metaphors occasionally
 - Always be encouraging and supportive
 - Include relevant emojis sparingly
-- End responses with #CollectorsCanyonClub
+- Keep responses warm and genuine
 
 Important:
 - If someone asks "how are you", respond warmly and ask about their collection
@@ -87,13 +87,8 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
         timestamp: Date.now()
       });
 
-      // Ensure response ends with hashtag if not present
-      const formattedResponse = response.includes('#CollectorsCanyonClub') 
-        ? response 
-        : `${response} #CollectorsCanyonClub`;
-
-      console.log('Generated response:', formattedResponse);
-      return formattedResponse;
+      console.log('Generated response:', response);
+      return response;
     } catch (error: any) {
       console.error('OpenAI Error:', {
         name: error.name,
