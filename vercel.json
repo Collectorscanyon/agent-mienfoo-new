@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "client/dist/**", "use": "@vercel/static" },
+    { "src": "api/index.ts", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.ts" },
+    { "src": "/(.*)", "dest": "/client/dist/$1" }
+  ],
+  "env": {
+    "NEYNAR_API_KEY": "@neynar_api_key",
+    "OPENAI_API_KEY": "@openai_api_key",
+    "SIGNER_UUID": "@signer_uuid",
+    "BOT_USERNAME": "@bot_username",
+    "WEBHOOK_SECRET": "@webhook_secret",
+    "BOT_FID": "@bot_fid"
+  }
+}
