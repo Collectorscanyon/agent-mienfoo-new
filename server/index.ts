@@ -1,6 +1,7 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import cors from 'cors';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -11,7 +12,7 @@ app.use(cors());
 app.use(express.json());
 
 // Log all requests
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   if (req.method === 'POST') {
     console.log('Request body:', JSON.stringify(req.body, null, 2));
@@ -19,7 +20,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Check environment variables
+// Verify required environment variables
 const required = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'];
 const missing = required.filter(key => !process.env[key]);
 if (missing.length > 0) {
@@ -28,34 +29,47 @@ if (missing.length > 0) {
 }
 
 // Initialize Neynar client
-const neynar = new NeynarAPIClient({
+const neynar = new NeynarAPIClient({ 
   apiKey: process.env.NEYNAR_API_KEY || ''
 });
 
-// Test endpoint
-app.get('/test', async (_req, res) => {
-  try {
-    res.json({
-      status: 'ok',
-      config: {
-        hasApiKey: !!process.env.NEYNAR_API_KEY,
-        hasSignerUuid: !!process.env.SIGNER_UUID,
-        hasWebhookSecret: !!process.env.WEBHOOK_SECRET
-      },
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Test error:', error);
-    res.status(500).json({ error: 'Server error' });
+// Webhook verification middleware
+const verifyWebhookSignature = (req: Request, res: Response, next: NextFunction) => {
+  const signature = req.headers['x-neynar-signature'];
+  if (!signature || typeof signature !== 'string') {
+    return res.status(401).json({ error: 'Missing signature' });
   }
+
+  const hmac = crypto
+    .createHmac('sha256', process.env.WEBHOOK_SECRET!)
+    .update(JSON.stringify(req.body))
+    .digest('hex');
+
+  if (`sha256=${hmac}` !== signature) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  next();
+};
+
+// Health check
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ 
+    status: 'ok',
+    config: {
+      hasApiKey: !!process.env.NEYNAR_API_KEY,
+      hasSignerUuid: !!process.env.SIGNER_UUID,
+      hasWebhookSecret: !!process.env.WEBHOOK_SECRET
+    }
+  });
 });
 
 // Test cast endpoint
-app.get('/test-cast', async (_req, res) => {
+app.get('/test-cast', async (_req: Request, res: Response) => {
   try {
     const response = await neynar.publishCast({
       signerUuid: process.env.SIGNER_UUID || '',
-      text: "🎭 Testing Collectors Canyon Bot - " + new Date().toISOString(),
+      text: `🎭 Testing Collectors Canyon Bot - ${new Date().toISOString()}`,
       channelId: 'collectorscanyon'
     });
     
@@ -67,7 +81,7 @@ app.get('/test-cast', async (_req, res) => {
 });
 
 // Webhook endpoint with immediate response
-app.post('/webhook', (req, res) => {
+app.post('/webhook', verifyWebhookSignature, (req: Request, res: Response) => {
   // Send immediate response to prevent timeout
   res.status(200).send('OK');
   
@@ -87,9 +101,10 @@ app.post('/webhook', (req, res) => {
         
         // Reply to mention
         await neynar.publishCast({
-          signer_uuid: process.env.SIGNER_UUID,
+          signerUuid: process.env.SIGNER_UUID || '',
           text: `Hey @${cast.author.username}! 👋 Welcome to Collectors Canyon! #CollectorsWelcome`,
-          parent: cast.hash
+          parent: cast.hash,
+          channelId: 'collectorscanyon'
         });
       }
     } catch (error) {
