@@ -1,0 +1,101 @@
+Here's how you can improve your logging and ensure the bot processes webhook events properly. We'll focus on enhancing handlers.ts to include detailed logging at each step of the webhook processing and specifically the mention handling logic.
+
+Enhancing Logging in handlers.ts
+Below is an updated version of handlers.ts with improved logging:
+
+typescript
+Copy code
+import type { Request, Response } from 'express';
+import { processMention } from './commands';
+import { logError, logInfo } from '../utils/logger'; // Assume you have a utility for logging
+
+// Main webhook handler
+export const handleWebhook = async (req: Request, res: Response) => {
+    try {
+        const { type, data } = req.body;
+
+        logInfo('Webhook Received', {
+            type,
+            data: JSON.stringify(data, null, 2)
+        });
+
+        // Process cast.created events
+        if (type === 'cast.created' && data) {
+            logInfo('Processing Cast', {
+                text: data.text,
+                mentioned_profiles: data.mentioned_profiles
+            });
+
+            // Check if @mienfoo.eth is mentioned
+            const isMentioned = data.mentioned_profiles.some(
+                (profile: any) => profile.username === 'mienfoo.eth'
+            );
+
+            if (isMentioned) {
+                logInfo('Mienfoo was mentioned. Processing response...');
+                await processMention(data); // Handle the mention
+                logInfo('Successfully processed mention for cast', { hash: data.hash });
+            } else {
+                logInfo('Mienfoo was not mentioned. Skipping...');
+            }
+        } else {
+            logInfo('Unhandled event type or missing data', { type });
+        }
+
+        // Respond to the webhook
+        res.status(200).json({ status: 'success', message: 'Event processed' });
+    } catch (error) {
+        logError('Error handling webhook', { error });
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+};
+Enhancing the Mention Handling in commands.ts
+If the bot should reply, like, or recast when mentioned, ensure the following logic is in processMention:
+
+typescript
+Copy code
+import { replyToCast, likeCast, recastCast } from './actions'; // Assume these are implemented actions
+
+export const processMention = async (castData: any) => {
+    try {
+        const { text, hash, author } = castData;
+
+        // Log mention details
+        console.log('Mention details:', {
+            text,
+            hash,
+            author: {
+                username: author.username,
+                display_name: author.display_name
+            }
+        });
+
+        // Example actions: Reply, Like, Recast
+        await replyToCast(hash, `👋 Hi, ${author.display_name}! Mienfoo here!`);
+        console.log('Replied to cast:', hash);
+
+        await likeCast(hash);
+        console.log('Liked cast:', hash);
+
+        await recastCast(hash);
+        console.log('Recasted cast:', hash);
+    } catch (error) {
+        console.error('Error processing mention:', error);
+    }
+};
+Verify Your Webhook Configuration
+Make sure your Neynar webhook is set to trigger on cast.created events with filters to identify mentions of @mienfoo.eth.
+Target URL should point to:
+bash
+Copy code
+https://<your-replit-url>.replit.dev/webhook
+Test the Enhanced Logging
+Mention @mienfoo.eth in a cast.
+Check the server logs for:
+Webhook Received: Details of the webhook payload.
+Processing Cast: Verifying if the bot is being mentioned.
+Actions: Confirmation of reply, like, or recast.
+Next Steps
+Implement the required actions (replyToCast, likeCast, recastCast).
+Monitor the server logs to ensure the bot responds when mentioned.
+Let me know if you encounter any specific errors, and I’ll assist further!
