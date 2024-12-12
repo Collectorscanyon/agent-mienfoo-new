@@ -1,67 +1,70 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import cors from 'cors';
 import dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Parse JSON bodies
+// Middleware
 app.use(express.json());
+app.use(cors());
 
-// Debug middleware to log all requests
-app.use((req: Request, res: Response, next) => {
-    console.log(`[DEBUG] ${new Date().toISOString()} - ${req.method} ${req.url}`);
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
+// Request logging middleware
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    if (req.method === 'POST') {
+        console.log('Request body:', JSON.stringify(req.body, null, 2));
+    }
     next();
 });
 
-// Root endpoint with debug logging
-app.get('/', (req: Request, res: Response) => {
-    console.log('Root endpoint hit');
+// Health check endpoint
+app.get('/', (_req, res) => {
     res.json({ 
         status: 'ok', 
         message: 'Server is running',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString() 
     });
 });
 
-// Webhook endpoint with detailed logging
-app.post('/webhook', (req: Request, res: Response) => {
-    console.log('Webhook endpoint hit');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-    
-    // Send immediate response
-    res.status(200).json({
-        status: 'ok',
-        message: 'Webhook received',
-        timestamp: new Date().toISOString()
-    });
+// Webhook endpoint
+app.post('/webhook', (req, res) => {
+    try {
+        // Send immediate response
+        res.status(200).json({ 
+            status: 'ok',
+            message: 'Webhook received',
+            timestamp: new Date().toISOString()
+        });
+
+        // Process webhook asynchronously
+        const { type, cast } = req.body;
+        console.log('Webhook received:', { type, cast });
+
+    } catch (error) {
+        console.error('Webhook processing error:', error);
+        // No need to send error response since we already sent 200
+    }
 });
 
 const PORT = process.env.PORT || 5000;
 
-// Start server with detailed error handling
-const server = app.listen(PORT, '0.0.0.0', (error?: Error) => {
-    if (error) {
-        console.error('Failed to start server:', error);
-        process.exit(1);
-    }
-    console.log(`[${new Date().toISOString()}] Server Details:`);
-    console.log(`🚀 Running on port: ${PORT}`);
+// Start server
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[${new Date().toISOString()}] Server started:`);
+    console.log(`🚀 Running on port ${PORT}`);
     console.log(`📍 Bound to: http://0.0.0.0:${PORT}`);
-    console.log('✅ Ready to accept connections');
 }).on('error', (error) => {
-    console.error('[ERROR] Server error:', error);
+    console.error('Server startup error:', error);
     process.exit(1);
 });
 
-// Graceful shutdown handler
+// Graceful shutdown
 process.on('SIGTERM', () => {
-    console.log('[SHUTDOWN] SIGTERM received. Shutting down gracefully...');
     server.close(() => {
-        console.log('Server closed');
+        console.log('Server shutdown complete');
         process.exit(0);
     });
 });

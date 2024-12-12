@@ -1,30 +1,27 @@
 const express = require('express');
 const app = express();
+
+// Basic middleware
 app.use(express.json());
 
-// Basic request logging
+// Log all requests
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    console.log(`${req.method} ${req.url}`);
     next();
 });
 
-// Root route for basic health check
+// Test endpoint
 app.get('/', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Simplified webhook handler
+// Simple webhook endpoint
 app.post('/webhook', (req, res) => {
-    // Send 200 OK immediately
+    console.log('Webhook received:', req.body);
     res.status(200).send('OK');
-    
-    console.log('Webhook received:', {
-        timestamp: new Date().toISOString(),
-        body: req.body
-    });
 });
 
-const PORT = 5000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// Start server
+app.listen(5000, '0.0.0.0', () => {
+    console.log('Server running on http://0.0.0.0:5000');
 });
