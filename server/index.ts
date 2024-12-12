@@ -9,14 +9,7 @@ const app = express();
 
 // Initialize Neynar client
 const neynar = new NeynarAPIClient({ 
-    apiKey: config.NEYNAR_API_KEY,
-    configuration: {
-        baseOptions: {
-            headers: {
-                "api-key": config.NEYNAR_API_KEY
-            }
-        }
-    }
+    apiKey: config.NEYNAR_API_KEY
 });
 
 // Detailed request logging
@@ -88,32 +81,47 @@ app.post('/webhook', async (req: Request, res: Response) => {
                 });
 
                 try {
-                    // Step 1: Like the mention
-                    console.log('Attempting to like cast:', cast.hash);
-                    await neynar.publishReaction({
-                        signerUuid: config.SIGNER_UUID,
-                        reactionType: 'like',
-                        castHash: cast.hash,
-                    });
-                    console.log('Successfully liked the mention');
+                    try {
+                        // Step 1: Like the mention
+                        console.log('Attempting to like cast:', cast.hash);
+                        await neynar.publishReaction({
+                            signerUuid: config.SIGNER_UUID,
+                            reactionType: 'like',
+                            target: cast.hash,
+                        });
+                        console.log('Successfully liked the mention');
+                    } catch (error) {
+                        console.error('Error liking cast:', error);
+                    }
 
-                    // Step 2: Generate response
-                    const cleanedMessage = cast.text
-                        .replace(new RegExp(`@${config.BOT_USERNAME}`, 'gi'), '')
-                        .trim();
-                    console.log('Generating response for:', cleanedMessage);
-                    const response = await generateBotResponse(cleanedMessage);
-                    console.log('Generated response:', response);
+                    try {
+                        // Step 2: Generate response
+                        const cleanedMessage = cast.text
+                            .replace(new RegExp(`@${config.BOT_USERNAME}`, 'gi'), '')
+                            .trim();
+                        console.log('Generating response for:', cleanedMessage);
+                        const response = await generateBotResponse(cleanedMessage);
+                        console.log('Generated response:', response);
 
-                    // Step 3: Reply to the mention
-                    console.log('Attempting to reply to cast:', cast.hash);
-                    await neynar.publishCast({
-                        signerUuid: config.SIGNER_UUID,
-                        text: `@${cast.author.username} ${response}`,
-                        parent: cast.hash,
-                        channelId: 'collectorscanyon'
-                    });
-                    console.log('Successfully replied to the mention');
+                        // Step 3: Reply to the mention
+                        console.log('Attempting to reply to cast:', cast.hash);
+                        const replyResult = await neynar.publishCast({
+                            signerUuid: config.SIGNER_UUID,
+                            text: `@${cast.author.username} ${response}`,
+                            parent: cast.hash,
+                        });
+                        console.log('Reply result:', replyResult);
+                        console.log('Successfully replied to the mention');
+                    } catch (error) {
+                        console.error('Error in response generation or reply:', error);
+                        if (error instanceof Error) {
+                            console.error('Error details:', {
+                                name: error.name,
+                                message: error.message,
+                                stack: error.stack
+                            });
+                        }
+                    }
 
                 } catch (error) {
                     console.error('Error in bot actions:', error);
