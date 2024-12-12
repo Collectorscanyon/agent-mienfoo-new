@@ -34,9 +34,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client with proper configuration
-const neynarClient = new NeynarAPIClient({ 
-  apiKey: process.env.NEYNAR_API_KEY || ''
+// Initialize Neynar client
+const neynarClient = new NeynarAPIClient({
+  apiKey: process.env.NEYNAR_API_KEY!
 });
 
 // Webhook signature verification middleware
@@ -75,6 +75,27 @@ app.get('/health', (_req, res) => {
   });
 });
 
+// Test endpoint to verify Neynar client
+app.get('/test', async (_req, res) => {
+  try {
+    // Test the API connection using a simple endpoint
+    await neynarClient.publishCast({
+      signer_uuid: process.env.SIGNER_UUID!,
+      text: 'API test',
+      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+    });
+    res.json({ status: 'ok', message: 'Neynar API connection successful' });
+  } catch (error) {
+      if (error instanceof Error) {
+        console.error('Test endpoint error:', error.message);
+        res.status(500).json({ error: 'Neynar client error', details: error.message });
+      } else {
+        console.error('Unknown test endpoint error');
+        res.status(500).json({ error: 'Unknown error occurred' });
+      }
+    }
+});
+
 // Webhook endpoint
 app.post('/webhook', verifyWebhookSignature, async (req, res) => {
   // Send immediate response to prevent timeouts
@@ -84,30 +105,43 @@ app.post('/webhook', verifyWebhookSignature, async (req, res) => {
     const payload = req.body as WebhookPayload;
     console.log('Webhook received:', {
       type: payload.type,
-      text: payload.cast?.text
+      text: payload.cast?.text,
+      mentions: payload.cast?.mentions
     });
 
     if (payload.type === 'cast.created' && payload.cast?.mentions?.some(m => m.fid === process.env.BOT_FID)) {
       try {
+        console.log('Processing bot mention from:', payload.cast.author.username);
+        
         // Add like reaction
-        await neynarClient.publishReaction({
-          signerUuid: process.env.SIGNER_UUID!,
-          reactionType: 'like',
-          target: payload.cast.hash
-        });
+        try {
+          await neynarClient.publishReaction({
+            signer_uuid: process.env.SIGNER_UUID!,
+            reaction_type: 'like',
+            cast_hash: payload.cast.hash
+          });
+          console.log('Successfully liked the cast');
+        } catch (reactionError) {
+          console.error('Error publishing reaction:', reactionError instanceof Error ? reactionError.message : 'Unknown error');
+        }
 
         // Reply in collectors canyon channel
-        await neynarClient.publishCast({
-          signerUuid: process.env.SIGNER_UUID!,
-          text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
-          channelId: 'collectorscanyon'
-        });
-      } catch (error) {
-        console.error('Error processing cast:', error);
+        try {
+          await neynarClient.publishCast({
+            signer_uuid: process.env.SIGNER_UUID!,
+            text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
+            parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+          });
+          console.log('Successfully published response cast');
+        } catch (castError) {
+          console.error('Error publishing cast:', castError instanceof Error ? castError.message : 'Unknown error');
+        }
+      } catch (processError) {
+        console.error('Error processing cast:', processError instanceof Error ? processError.message : 'Unknown error');
       }
     }
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('Webhook error:', error instanceof Error ? error.message : 'Unknown error');
   }
 });
 
