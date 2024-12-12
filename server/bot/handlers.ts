@@ -27,56 +27,84 @@ setInterval(() => {
 function isBotMessage(cast: any): boolean {
   if (!cast?.author) return false;
   
-  // Check both the author and message content
+  // Strict bot identity check
   const isBotAuthor = (
     cast.author.fid?.toString() === config.BOT_FID ||
     cast.author.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
     cast.author.username?.toLowerCase() === 'mienfoo.eth'
   );
 
-  // Add detailed logging
-  console.log('Message author check:', {
+  // Check if this is a response in a thread started by the bot
+  const isInBotThread = cast.thread_hash && processedThreads.has(cast.thread_hash);
+  
+  // Add enhanced logging
+  console.log('Bot message detection:', {
+    timestamp: new Date().toISOString(),
     castHash: cast.hash,
     authorFid: cast.author.fid,
     authorUsername: cast.author.username,
+    threadHash: cast.thread_hash,
     isBotAuthor,
+    isInBotThread,
     botFid: config.BOT_FID,
     botUsername: config.BOT_USERNAME
   });
 
-  return isBotAuthor;
+  // Consider it a bot message if either condition is true
+  return isBotAuthor || isInBotThread;
 }
 
 function shouldProcessThread(cast: any): boolean {
+  if (!cast?.thread_hash) return false;
+  
   const threadHash = cast.thread_hash;
   const currentTime = Date.now();
+  const castKey = `${cast.hash}-${threadHash}`;
   
+  // Enhanced logging for thread processing decision
+  console.log('Thread processing check:', {
+    timestamp: new Date().toISOString(),
+    castKey,
+    threadHash,
+    author: cast.author?.username,
+    isReply: !!cast.parent_hash,
+    hasThread: processedThreads.has(threadHash)
+  });
+
   // If we haven't seen this thread before
   if (!processedThreads.has(threadHash)) {
     processedThreads.set(threadHash, {
       lastResponseTime: currentTime,
-      responses: new Set([cast.hash])
+      responses: new Set([cast.hash]),
+      initialAuthor: cast.author?.username,
+      parentHash: cast.parent_hash
     });
+    console.log('New thread initialized:', { castKey, threadHash });
     return true;
   }
 
   const threadData = processedThreads.get(threadHash)!;
   
-  // If we've already processed this exact cast
+  // Strict duplicate check
   if (threadData.responses.has(cast.hash)) {
-    console.log(`Skipping already processed cast ${cast.hash} in thread ${threadHash}`);
+    console.log('Duplicate cast detected:', { castKey, threadHash });
     return false;
   }
 
-  // If the last response was too recent (within 30 seconds)
-  if (currentTime - threadData.lastResponseTime < 30 * 1000) {
-    console.log(`Skipping response in thread ${threadHash} - too recent`);
+  // Cooldown period check (2 minutes)
+  if (currentTime - threadData.lastResponseTime < 120 * 1000) {
+    console.log('Thread cooldown active:', {
+      castKey,
+      threadHash,
+      timeRemaining: `${Math.round((120 * 1000 - (currentTime - threadData.lastResponseTime)) / 1000)}s`
+    });
     return false;
   }
 
-  // Update thread data and allow processing
+  // Update thread data
   threadData.responses.add(cast.hash);
   threadData.lastResponseTime = currentTime;
+  console.log('Thread processing approved:', { castKey, threadHash });
   return true;
 }
 
@@ -84,15 +112,17 @@ export async function handleWebhook(event: any) {
   try {
     const timestamp = new Date().toISOString();
     
-    // Enhanced webhook logging
-    console.log('Webhook request received:', {
+    // Enhanced webhook logging with full context
+    console.log('Webhook event received:', {
       timestamp,
       eventType: event.body?.type,
       castHash: event.body?.data?.hash,
       threadHash: event.body?.data?.thread_hash,
       parentHash: event.body?.data?.parent_hash,
       author: event.body?.data?.author?.username,
-      text: event.body?.data?.text
+      text: event.body?.data?.text,
+      isReply: !!event.body?.data?.parent_hash,
+      channelContext: event.body?.data?.author_channel_context
     });
 
     if (!event.body?.type || !event.body?.data) {
@@ -102,21 +132,33 @@ export async function handleWebhook(event: any) {
 
     const { type, data: cast } = event.body;
     
-    // Early exit for non-cast events
+    // Early validation and filtering
     if (type !== 'cast.created') {
       console.log('Skipping non-cast event:', type);
       return;
     }
 
-    // Enhanced bot message detection
-    if (isBotMessage(cast)) {
-      console.log('Skipping bot\'s own message:', {
+    // Create a unique key for this cast
+    const castKey = `${cast.hash}-${cast.thread_hash}`;
+    
+    // Check if we've already processed this cast
+    if (processedThreads.has(cast.thread_hash) && processedThreads.get(cast.thread_hash)?.responses.has(cast.hash)) {
+      console.log('Skipping already processed cast:', {
         timestamp,
-        hash: cast.hash,
-        threadHash: cast.thread_hash,
+        castKey,
+        reason: 'Already processed'
+      });
+      return;
+    }
+
+    // Enhanced bot message and self-mention detection
+    if (isBotMessage(cast)) {
+      console.log('Skipping bot-related message:', {
+        timestamp,
+        castKey,
         author: cast.author?.username,
         text: cast.text,
-        reason: 'Bot authored message'
+        reason: 'Bot message or in bot thread'
       });
       return;
     }
