@@ -6,8 +6,22 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Type definitions for webhook payloads
+interface WebhookPayload {
+  type: string;
+  cast?: {
+    hash: string;
+    text: string;
+    author: {
+      username: string;
+      fid: string;
+    };
+    mentions?: Array<{ fid: string }>;
+  };
+}
+
 // Validate required environment variables
-const requiredEnvVars = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'] as const;
+const requiredEnvVars = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET', 'BOT_FID'] as const;
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
     console.error(`Missing required environment variable: ${envVar}`);
@@ -20,15 +34,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client with v2 configuration
-import { Configuration } from '@neynar/nodejs-sdk';
-
-const config = new Configuration({
-  apiKey: process.env.NEYNAR_API_KEY || '',
-  fid: parseInt(process.env.BOT_FID || '834885', 10)
+// Initialize Neynar client
+const neynar = new NeynarAPIClient({
+  apiKey: process.env.NEYNAR_API_KEY || ''
 });
-
-const neynar = new NeynarAPIClient(config);
 
 // Webhook signature verification middleware
 function verifySignature(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -42,13 +51,9 @@ function verifySignature(req: express.Request, res: express.Response, next: expr
     const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET || '');
     const body = JSON.stringify(req.body);
     const digest = hmac.update(body).digest('hex');
-    const expectedSignature = `sha256=${digest}`;
 
-    if (signature !== expectedSignature) {
-      console.error('Invalid webhook signature', {
-        received: signature,
-        expected: expectedSignature
-      });
+    if (signature !== `sha256=${digest}`) {
+      console.error('Invalid webhook signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
@@ -60,32 +65,37 @@ function verifySignature(req: express.Request, res: express.Response, next: expr
 }
 
 // Webhook endpoint
-app.post('/webhook', verifySignature, async (req, res) => {
+app.post('/webhook', verifySignature, async (req: express.Request, res: express.Response) => {
   const requestId = Math.random().toString(36).substring(7);
-  console.log(`[${new Date().toISOString()}][${requestId}] Received webhook:`, req.body);
+  console.log(`[${requestId}] Received webhook:`, req.body);
 
   try {
     // Send immediate acknowledgment
     res.status(200).json({ status: 'received', requestId });
 
-    const { type, cast } = req.body;
+    const payload = req.body as WebhookPayload;
+    if (!payload.cast) {
+      console.log(`[${requestId}] No cast in payload`);
+      return;
+    }
 
     // Process mentions
-    if (type === 'cast.created' && cast?.mentions?.some(m => m.fid === process.env.BOT_FID)) {
-      await handleMention(cast, requestId);
+    const isBotMentioned = payload.cast.mentions?.some(m => m.fid === process.env.BOT_FID);
+    if (isBotMentioned) {
+      await handleMention(payload.cast, requestId);
     }
 
     // Check for collection-related content
-    if (cast?.text && isCollectibleRelated(cast.text)) {
-      await shareToCollectorsCanyon(cast, requestId);
+    if (isCollectibleRelated(payload.cast.text)) {
+      await shareToCollectorsCanyon(payload.cast, requestId);
     }
   } catch (error) {
     console.error(`[${requestId}] Error processing webhook:`, error);
-    // No need to send error response since we already sent 200 OK
   }
 });
 
-async function handleMention(cast: any, requestId: string) {
+async function handleMention(cast: WebhookPayload['cast'], requestId: string) {
+  if (!cast) return;
   console.log(`[${requestId}] Processing mention from: ${cast.author.username}`);
 
   try {
@@ -93,14 +103,14 @@ async function handleMention(cast: any, requestId: string) {
     await neynar.publishReaction({
       signerUuid: process.env.SIGNER_UUID || '',
       reactionType: 'like',
-      castHash: cast.hash
+      target: cast.hash
     });
 
     // Reply to mention
     await neynar.publishCast({
       signerUuid: process.env.SIGNER_UUID || '',
       text: `Hey @${cast.author.username}! 👋 Let's talk about collectibles! #CollectorsCanyonClub`,
-      parentCastId: cast.hash,
+      parent: cast.hash,
       channelId: 'collectorscanyon'
     });
 
@@ -110,14 +120,15 @@ async function handleMention(cast: any, requestId: string) {
   }
 }
 
-async function shareToCollectorsCanyon(cast: any, requestId: string) {
-  console.log(`[${requestId}] Sharing to CollectorsCanyonClub`);
+async function shareToCollectorsCanyon(cast: WebhookPayload['cast'], requestId: string) {
+  if (!cast) return;
+  console.log(`[${requestId}] Sharing to CollectorsCanyon`);
 
   try {
     await neynar.publishCast({
-      signer_uuid: process.env.SIGNER_UUID || '',
+      signerUuid: process.env.SIGNER_UUID || '',
       text: `💡 Interesting collection discussion!\n\n${cast.text}\n\nVia @${cast.author.username}\n#CollectorsCanyonClub`,
-      parent_url: 'https://warpcast.com/~/channel/collectorscanyon'
+      channelId: 'collectorscanyon'
     });
 
     console.log(`[${requestId}] Successfully shared to channel`);
@@ -144,7 +155,7 @@ app.get('/health', (_req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = parseInt(process.env.PORT || '5000', 10);
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🤖 Bot server running on port ${PORT}`);
   console.log('👂 Ready for webhook requests');
