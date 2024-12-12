@@ -3,14 +3,7 @@ import { config } from '../config';
 import { generateBotResponse } from './openai';
 
 const neynar = new NeynarAPIClient({ 
-  apiKey: config.NEYNAR_API_KEY,
-  configuration: {
-    baseOptions: {
-      headers: {
-        "x-neynar-api-key": config.NEYNAR_API_KEY
-      }
-    }
-  }
+  apiKey: config.NEYNAR_API_KEY
 });
 
 export async function handleWebhook(event: any) {
@@ -105,3 +98,81 @@ function shouldShareToCollectorsCanyon(cast: any): boolean {
          text.includes('trading') ||
          text.includes('rare');
 }
+
+export async function engageWithChannelContent() {
+  try {
+    console.log('Checking collectors canyon channel for content to engage with');
+    
+    // Get recent casts from the channel using the v2 API method
+    const response = await neynar.fetchChannel({ 
+      channelId: 'collectorscanyon'
+    });
+
+    if (!response) {
+      console.log('No response received from channel fetch');
+      return;
+    }
+
+    console.log(`Found ${response.casts?.length || 0} casts in the channel`);
+    const casts = response.casts?.slice(0, 20) || [];
+    
+    for (const cast of casts) {
+      try {
+        // Skip own casts and already engaged content
+        if (cast.author.fid.toString() === config.BOT_FID) {
+          console.log('Skipping own cast');
+          continue;
+        }
+
+        // Evaluate if content is reaction-worthy
+        if (isCollectionRelatedContent(cast.text)) {
+          console.log('Found collection-related content:', {
+            author: cast.author.username,
+            text: cast.text.substring(0, 50) + '...',
+            castHash: cast.hash
+          });
+
+          // Add reaction (like)
+          await neynar.publishReaction({
+            signerUuid: config.SIGNER_UUID,
+            reactionType: 'like',
+            target: cast.hash
+          });
+          
+          console.log(`Successfully liked cast ${cast.hash} by ${cast.author.username}`);
+          
+          // Add a delay between reactions to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (error) {
+        console.error('Error processing cast:', {
+          castHash: cast.hash,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        // Continue with next cast even if one fails
+        continue;
+      }
+    }
+    
+    console.log('Finished engaging with channel content');
+  } catch (error) {
+    console.error('Error engaging with channel content:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+function isCollectionRelatedContent(text: string): boolean {
+  const keywords = [
+    'collect', 'rare', 'vintage', 'cards', 'trading',
+    'figure', 'limited', 'edition', 'mint', 'graded',
+    'sealed', 'hobby', 'treasure', 'antique', 'value'
+  ];
+  
+  text = text.toLowerCase();
+  return keywords.some(keyword => text.includes(keyword));
+}
+
+// Start periodic engagement
+setInterval(engageWithChannelContent, 5 * 60 * 1000); // Check every 5 minutes
