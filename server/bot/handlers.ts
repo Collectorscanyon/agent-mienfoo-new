@@ -8,19 +8,31 @@ const neynar = new NeynarAPIClient({
   apiKey: config.NEYNAR_API_KEY
 });
 
-// Cache for tracking processed messages
-const processedMessages = new Set<string>();
-const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+interface ProcessedCast {
+  hash: string;
+  timestamp: number;
+}
+
+// Cache for tracking processed messages with timestamps
+const processedCasts = new Map<string, ProcessedCast>();
+const CACHE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
 // Periodically clean up old entries
-setInterval(() => processedMessages.clear(), CACHE_TIMEOUT);
+setInterval(() => {
+  const now = Date.now();
+  for (const [hash, cast] of processedCasts.entries()) {
+    if (now - cast.timestamp > CACHE_TIMEOUT) {
+      processedCasts.delete(hash);
+    }
+  }
+}, 60 * 1000); // Clean every minute
 
 export async function handleWebhook(event: any) {
   try {
     console.log('Webhook handler started:', {
       eventType: event?.type,
       timestamp: new Date().toISOString(),
-      rawEvent: event
+      rawEvent: JSON.stringify(event, null, 2)
     });
 
     if (!event?.type || !event?.data) {
@@ -35,42 +47,51 @@ export async function handleWebhook(event: any) {
       timestamp: new Date().toISOString(),
       castHash: cast?.hash,
       authorUsername: cast?.author?.username,
+      authorFid: cast?.author?.fid,
+      botFid: config.BOT_FID,
       hasAttachments: cast?.attachments?.length > 0,
-      attachments: cast?.attachments,
-      hasEmbeds: cast?.embeds?.length > 0,
-      embeds: cast?.embeds
+      text: cast?.text
     });
 
     if (type === 'cast.created') {
       // Skip if the message is from the bot itself
-      if (cast.author.fid.toString() === config.BOT_FID) {
-        console.log('Skipping bot\'s own message:', cast.hash);
+      if (cast.author.fid.toString() === config.BOT_FID || 
+          cast.author.username.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
+          cast.author.username.toLowerCase() === 'mienfoo.eth') {
+        console.log('Skipping bot\'s own message:', {
+          hash: cast.hash,
+          author: cast.author.username,
+          text: cast.text
+        });
         return;
       }
 
-      // Check if we've already processed this message
-      if (processedMessages.has(cast.hash)) {
-        console.log('Skipping already processed message:', cast.hash);
+      // Check for duplicate messages
+      if (processedCasts.has(cast.hash)) {
+        console.log('Skipping duplicate message:', {
+          hash: cast.hash,
+          timeSinceFirst: Date.now() - processedCasts.get(cast.hash)!.timestamp
+        });
         return;
       }
 
-      // Add to processed messages set
-      processedMessages.add(cast.hash);
-
-      // Check for mentions using both FID and username
-      const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
-                       cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
-
-      console.log('Mention detection for cast:', {
-        castHash: cast.hash,
-        author: cast.author.username,
-        authorFid: cast.author.fid,
-        botFid: config.BOT_FID,
-        isMentioned
+      // Add to processed messages
+      processedCasts.set(cast.hash, {
+        hash: cast.hash,
+        timestamp: Date.now()
       });
 
+      // Check for mentions of the bot (excluding collectorscanyon.eth)
+      const isMentioned = cast.mentions?.some((m: any) => m.fid.toString() === config.BOT_FID) ||
+                         cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
+                         cast.text?.toLowerCase().includes('@mienfoo.eth');
+
       if (isMentioned) {
-        console.log('Bot mention detected in cast:', cast.text);
+        console.log('Bot mention detected:', {
+          castHash: cast.hash,
+          author: cast.author.username,
+          text: cast.text
+        });
         await handleMention(cast);
       }
     }
@@ -85,8 +106,7 @@ async function handleMention(cast: any) {
       timestamp: new Date().toISOString(),
       castHash: cast.hash,
       author: cast.author.username,
-      text: cast.text,
-      mentions: cast.mentions
+      text: cast.text
     });
     
     // Like the mention first
@@ -99,68 +119,42 @@ async function handleMention(cast: any) {
       console.log('Successfully liked mention:', cast.hash);
     } catch (error) {
       console.error('Error liking mention:', error);
-      // Continue with response even if like fails
     }
 
-    // Check both direct attachments and embedded images
+    // Check for images
     let imageUrl = null;
     let response;
 
-    // Check direct attachments first
     if (cast.attachments?.length > 0) {
-        imageUrl = cast.attachments[0].url;
-        console.log('Found image in direct attachments:', imageUrl);
-    }
-    // Check embedded images if no direct attachments
-    else if (cast.embeds?.length > 0) {
-        const embeddedImage = cast.embeds[0]?.cast?.embeds?.[0];
-        if (embeddedImage?.url) {
-            imageUrl = embeddedImage.url;
-            console.log('Found image in embedded cast:', imageUrl);
-        }
+      imageUrl = cast.attachments[0].url;
+      console.log('Found image in direct attachments:', imageUrl);
+    } else if (cast.embeds?.length > 0) {
+      const embeddedImage = cast.embeds[0]?.cast?.embeds?.[0];
+      if (embeddedImage?.url) {
+        imageUrl = embeddedImage.url;
+        console.log('Found image in embedded cast:', imageUrl);
+      }
     }
 
     if (imageUrl) {
-        console.log('Processing cast with image:', {
-            castHash: cast.hash,
-            authorUsername: cast.author.username,
-            imageUrl,
-            timestamp: new Date().toISOString()
-        });
-
-        try {
-            const imageAnalysis = await analyzeImage(imageUrl);
-            console.log('Vision API analysis result:', {
-                success: !!imageAnalysis,
-                isCollectible: imageAnalysis?.isCollectible,
-                labels: imageAnalysis?.labels,
-                hasText: !!imageAnalysis?.text,
-                timestamp: new Date().toISOString()
-            });
-            
-            if (imageAnalysis) {
-                response = generateImageResponse(imageAnalysis);
-                console.log('Generated image-based response:', {
-                    response,
-                    analysisType: imageAnalysis.isCollectible ? 'collectible' : 'non-collectible',
-                    timestamp: new Date().toISOString()
-                });
-            } else {
-                console.log('Image analysis failed, falling back to text response');
-                const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
-                response = await generateBotResponse(cleanedMessage);
-            }
-        } catch (error) {
-            console.error('Error in image analysis:', error);
-            // Fallback to text-based response if image analysis fails
-            const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
-            response = await generateBotResponse(cleanedMessage);
+      try {
+        const imageAnalysis = await analyzeImage(imageUrl);
+        if (imageAnalysis) {
+          response = generateImageResponse(imageAnalysis);
+        } else {
+          console.log('Image analysis failed, falling back to text response');
+          const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+          response = await generateBotResponse(cleanedMessage);
         }
-    } else {
-        // Regular text-based response
+      } catch (error) {
+        console.error('Error in image analysis:', error);
         const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
-        console.log('Generating response for cleaned message:', cleanedMessage);
         response = await generateBotResponse(cleanedMessage);
+      }
+    } else {
+      const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+      console.log('Generating response for cleaned message:', cleanedMessage);
+      response = await generateBotResponse(cleanedMessage);
     }
     
     console.log('Generated response:', response);
@@ -185,8 +179,8 @@ export async function engageWithChannelContent() {
   try {
     console.log('Checking collectors canyon channel for content to engage with');
     
-    // Get recent casts from the channel
     const response = await neynar.searchCasts({
+      q: "collectorscanyon",
       channelId: "collectorscanyon",
       limit: 20
     });
@@ -200,8 +194,10 @@ export async function engageWithChannelContent() {
 
     for (const cast of response.result.casts) {
       try {
-        // Skip own casts and already processed messages
-        if (cast.author.fid.toString() === config.BOT_FID || processedMessages.has(cast.hash)) {
+        // Skip bot's own messages and already processed messages
+        if (cast.author.fid.toString() === config.BOT_FID || 
+            cast.author.username.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
+            processedCasts.has(cast.hash)) {
           continue;
         }
 
@@ -221,8 +217,11 @@ export async function engageWithChannelContent() {
             });
             console.log(`Liked cast ${cast.hash} by ${cast.author.username}`);
             
-            // Add to processed messages to prevent duplicate engagement
-            processedMessages.add(cast.hash);
+            // Add to processed casts
+            processedCasts.set(cast.hash, {
+              hash: cast.hash,
+              timestamp: Date.now()
+            });
           } catch (error) {
             console.error('Error liking cast:', error);
           }
@@ -235,8 +234,6 @@ export async function engageWithChannelContent() {
         continue;
       }
     }
-    
-    console.log('Finished engaging with channel content');
   } catch (error) {
     console.error('Error engaging with channel content:', {
       error: error instanceof Error ? error.message : 'Unknown error',
