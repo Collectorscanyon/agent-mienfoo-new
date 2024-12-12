@@ -6,8 +6,22 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Type definitions
+interface WebhookPayload {
+  type: string;
+  cast?: {
+    hash: string;
+    text: string;
+    author: {
+      username: string;
+      fid: string;
+    };
+    mentions?: Array<{ fid: string }>;
+  };
+}
+
 // Validate required environment variables
-const requiredEnvVars = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'BOT_FID', 'WEBHOOK_SECRET'] as const;
+const requiredEnvVars = ['NEYNAR_API_KEY', 'SIGNER_UUID', 'WEBHOOK_SECRET'] as const;
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
     console.error(`Missing required environment variable: ${envVar}`);
@@ -20,35 +34,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client with proper configuration
-const neynar = new NeynarAPIClient({ 
+// Initialize Neynar client
+const neynar = new NeynarAPIClient({
   apiKey: process.env.NEYNAR_API_KEY || '',
-  signer: { signer_uuid: process.env.SIGNER_UUID || '' }
-});
-
-// Log initialization status
-console.log('🔑 Neynar client initialized with API key:', !!process.env.NEYNAR_API_KEY);
-
-// Type definitions for webhook payload
-interface WebhookPayload {
-  type: 'cast.created' | string;
-  cast?: {
-    hash: string;
-    text: string;
-    author: {
-      fid: string;
-      username: string;
-    };
-    mentions?: Array<{ fid: string }>;
-    parent_hash?: string;
-  };
-}
-
-// Request logging middleware
-app.use((req, res, next) => {
-  const requestId = Math.random().toString(36).substring(7);
-  console.log(`[${requestId}] ${req.method} ${req.path}`);
-  next();
+  baseOptions: {
+    headers: {
+      'api-key': process.env.NEYNAR_API_KEY || '',
+      'Content-Type': 'application/json'
+    }
+  }
 });
 
 // Webhook signature verification middleware
@@ -75,95 +69,6 @@ const verifyWebhookSignature = (req: express.Request, res: express.Response, nex
   }
 };
 
-// Webhook endpoint
-app.post('/webhook', verifyWebhookSignature, async (req, res) => {
-  const requestId = Math.random().toString(36).substring(7);
-  
-  try {
-    const payload = req.body as WebhookPayload;
-    
-    // Log webhook receipt
-    console.log(`[${requestId}] Received webhook:`, {
-      type: payload.type,
-      cast: payload.cast?.text,
-      author: payload.cast?.author?.username
-    });
-
-    // Send immediate response
-    res.status(200).json({ status: 'received' });
-
-    // Process webhook asynchronously
-    if (payload.type === 'cast.created' && payload.cast) {
-      const { cast } = payload;
-      
-      try {
-        // Handle mentions if cast exists and has mentions
-        if (cast.mentions?.some(m => m.fid === process.env.BOT_FID)) {
-          await handleMention(cast, requestId);
-        }
-
-        // Check for collection-related content
-        if (cast.text && isCollectibleRelated(cast.text)) {
-          await shareToCollectorsCanyon(cast, requestId);
-        }
-      } catch (error) {
-        console.error(`[${requestId}] Error processing cast:`, error);
-      }
-    }
-  } catch (error) {
-    console.error(`[${requestId}] Webhook error:`, error);
-    // Don't send error response here since we already sent 200 OK
-  }
-});
-
-async function handleMention(cast: WebhookPayload['cast'], requestId: string) {
-  if (!cast) return;
-  
-  try {
-    console.log(`[${requestId}] Processing mention from @${cast.author.username}`);
-    
-    // Like the mention
-    await neynar.publishReaction({
-      signerUuid: process.env.SIGNER_UUID!,
-      reactionType: 'like',
-      target: cast.hash
-    });
-    console.log(`[${requestId}] Liked mention from @${cast.author.username}`);
-
-    // Reply to mention
-    await neynar.publishCast({
-      signerUuid: process.env.SIGNER_UUID!,
-      text: `Hey @${cast.author.username}! 👋 Let's talk about collectibles! #CollectorsCanyonClub`,
-      parent: cast.hash,
-      channelId: 'collectorscanyon'
-    });
-    console.log(`[${requestId}] Replied to @${cast.author.username}`);
-  } catch (error) {
-    console.error(`[${requestId}] Error handling mention:`, error);
-    throw error;
-  }
-}
-
-async function shareToCollectorsCanyon(cast: WebhookPayload['cast'], requestId: string) {
-  if (!cast) return;
-  
-  try {
-    await neynar.publishCast({
-      signerUuid: process.env.SIGNER_UUID!,
-      text: `💡 Collection discussion!\n\n${cast.text}\n\nvia @${cast.author.username}\n#CollectorsCanyonClub`,
-      channelId: 'collectorscanyon'
-    });
-    console.log(`[${requestId}] Shared to CollectorsCanyon`);
-  } catch (error) {
-    console.error(`[${requestId}] Error sharing to channel:`, error);
-  }
-}
-
-function isCollectibleRelated(text: string): boolean {
-  const keywords = ['collect', 'card', 'rare', 'trading', 'pokemon', 'magic'];
-  return keywords.some(keyword => text.toLowerCase().includes(keyword));
-}
-
 // Health check endpoint
 app.get('/health', (_req, res) => {
   res.json({ 
@@ -171,10 +76,45 @@ app.get('/health', (_req, res) => {
     config: {
       hasNeynarKey: !!process.env.NEYNAR_API_KEY,
       hasSignerUuid: !!process.env.SIGNER_UUID,
-      hasWebhookSecret: !!process.env.WEBHOOK_SECRET,
-      botFid: process.env.BOT_FID
+      hasWebhookSecret: !!process.env.WEBHOOK_SECRET
     }
   });
+});
+
+// Webhook endpoint
+app.post('/webhook', verifyWebhookSignature, async (req, res) => {
+  // Send immediate response to prevent timeouts
+  res.status(200).json({ status: 'processing' });
+  
+  try {
+    const payload = req.body as WebhookPayload;
+    console.log('Webhook received:', {
+      type: payload.type,
+      text: payload.cast?.text
+    });
+
+    if (payload.type === 'cast.created' && payload.cast?.mentions?.some(m => m.fid === process.env.BOT_FID)) {
+      try {
+        // Add like reaction
+        await neynar.publishReaction({
+          signerUuid: process.env.SIGNER_UUID!,
+          reactionType: 'like',
+          target: payload.cast.hash
+        });
+
+        // Reply in collectors canyon channel
+        await neynar.publishCast({
+          signerUuid: process.env.SIGNER_UUID!,
+          text: `Hey @${payload.cast.author.username}! 👋 Welcome to Collectors Canyon! Let's talk about your collection! #CollectorsWelcome`,
+          channelId: 'collectorscanyon'
+        });
+      } catch (error) {
+        console.error('Error processing cast:', error);
+      }
+    }
+  } catch (error) {
+    console.error('Webhook error:', error);
+  }
 });
 
 const PORT = parseInt(process.env.PORT || '5000', 10);

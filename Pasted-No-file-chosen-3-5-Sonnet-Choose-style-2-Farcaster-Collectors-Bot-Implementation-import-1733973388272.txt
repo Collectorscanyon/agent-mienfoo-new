@@ -1,0 +1,78 @@
+No file chosen
+
+3.5 Sonnet
+
+Choose style
+2
+
+Farcaster Collectors Bot Implementation
+
+import express from 'express';
+import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const app = express();
+app.use(express.json());
+
+// Properly initialize Neynar client with v2 SDK
+const config = new Configuration({
+  apiKey: process.env.NEYNAR_API_KEY
+});
+
+const neynar = new NeynarAPIClient(config);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'collectors-canyon-bot' });
+});
+
+// Webhook handler for Farcaster mentions
+app.post('/webhook', async (req, res) => {
+  // Send immediate response to prevent timeouts
+  res.status(200).json({ status: 'processing' });
+  
+  try {
+    const { type, cast } = req.body;
+    
+    if (type === 'cast.created' && cast?.mentions?.includes(process.env.BOT_FID)) {
+      const text = cast.text.toLowerCase();
+      
+      // Handle different types of collector interactions
+      if (text.includes('specialty')) {
+        await respondToSpecialty(cast);
+      } else if (text.includes('rare finds') || text.includes('unique')) {
+        await respondToRareFinds(cast);
+      } else if (text.includes('journey')) {
+        await respondToJourney(cast);
+      } else {
+        await sendWelcomeMessage(cast);
+      }
+    }
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+  }
+});
+
+// Response handlers
+async function respondToSpecialty(cast: any) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text: `Hey @${cast.author.username}! 🎭 Excited to hear about your collecting specialty! Whether it's vintage cards, rare coins, or unique art, every collector's focus makes our community special. What draws you to your particular niche? #CollectorsUnite`,
+      channel_id: "collectorscanyon"
+    });
+  } catch (error) {
+    console.error('Error responding to specialty:', error);
+  }
+}
+
+async function respondToRareFinds(cast: any) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text: `@${cast.author.username} 🌟 Rare finds are what make collecting so exciting! Each piece has its own story and journey. Would love to hear more about your most treasured piece and what makes it special to you. #CollectorsStories`,
+      channel_id: "collectorscanyon"
+    });
+  } catch (error) {
