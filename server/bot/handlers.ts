@@ -3,8 +3,8 @@ import { handleCommand } from './commands';
 import { config } from '../config';
 import { generateBotResponse } from './openai';
 
-// Initialize Neynar client
-const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
+// Import the shared Neynar client instance
+import { neynar } from '../index';
 
 // Memory store for user collections
 // Define proper types for Neynar SDK responses
@@ -86,16 +86,15 @@ export async function reply(parentHash: string, text: string) {
     console.log('Attempting to reply to cast:', { parentHash, text });
     // Add #/collectorscanyon hashtag to all messages
     // Format text with channel tag
-    const channelText = `${text}\n\n#/collectorscanyon`;
+    // Format text without hashtag since we're posting directly to channel
+    const channelText = `${text}`;
     
-    // Publish the cast with proper channel integration
+    // Publish the cast to the collectors canyon channel
     const response = await neynar.publishCast({
-      signerUuid: config.SIGNER_UUID,
+      signer_uuid: config.SIGNER_UUID,
       text: channelText,
       parent: parentHash,
-      embeds: [{
-        url: 'https://warpcast.com/~/channel/collectorscanyon'
-      }]
+      channel_id: 'collectorscanyon' // Use correct parameter name for channel
     });
     console.log('Reply sent successfully:', response);
   } catch (error) {

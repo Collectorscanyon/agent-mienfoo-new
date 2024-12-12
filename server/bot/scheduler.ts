@@ -1,23 +1,20 @@
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import { config } from '../config';
 
-const neynarConfig = new Configuration({
-  apiKey: config.NEYNAR_API_KEY,
-});
-
-const neynar = new NeynarAPIClient(neynarConfig);
+// Import the shared Neynar client instance
+import { neynar } from '../index';
 
 // Set 8-hour interval for casts to avoid rate limiting
 const CAST_INTERVAL = 8 * 60 * 60 * 1000;
 
 const messages = [
-  "👋 #/collectorscanyon What's your favorite item in your collection? Share with me! 🤔",
-  "✨ #/collectorscanyon Any exciting additions to your collection today? Let me know! 🎉",
-  "🎯 #/collectorscanyon Love seeing rare finds! What's your most unique collectible? ✨",
-  "🌟 #/collectorscanyon Who else is passionate about collecting? Let's chat! 🌟",
-  "📚 #/collectorscanyon What started your collecting journey? I'd love to hear your story! 📚",
-  "🎁 #/collectorscanyon Show off your latest addition! What's new in your collection? 🎯",
-  "🏆 #/collectorscanyon Collectors unite! What's your specialty? 🏆"
+  "👋 What's your favorite item in your collection? Share with me! 🤔",
+  "✨ Any exciting additions to your collection today? Let me know! 🎉",
+  "🎯 Love seeing rare finds! What's your most unique collectible? ✨",
+  "🌟 Who else is passionate about collecting? Let's chat! 🌟",
+  "📚 What started your collecting journey? I'd love to hear your story! 📚",
+  "🎁 Show off your latest addition! What's new in your collection? 🎯",
+  "🏆 Collectors unite! What's your specialty? 🏆"
 ];
 
 export async function createDailyCast() {
@@ -28,6 +25,7 @@ export async function createDailyCast() {
     await neynar.publishCast({
       signerUuid: config.SIGNER_UUID,
       text: randomMessage,
+      channelId: 'collectorscanyon'
     });
     
     console.log('Daily cast created successfully');
