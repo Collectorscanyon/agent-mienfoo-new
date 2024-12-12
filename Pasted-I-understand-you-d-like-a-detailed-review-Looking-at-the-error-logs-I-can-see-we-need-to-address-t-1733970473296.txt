@@ -1,0 +1,81 @@
+I understand you'd like a detailed review. Looking at the error logs, I can see we need to address the 502 Bad Gateway errors in the webhook endpoint first. Let me help organize this systematically:
+
+Critical Issues to Fix:
+
+
+Webhook endpoint is returning 502 errors consistently
+Need proper error handling and response codes
+Potential timeout issues in webhook processing
+
+
+Current Setup Review:
+
+typescriptCopy- Server running on port 5000
+- Ngrok forwarding configured correctly (https://5c82-172-56-85-86.ngrok-free.app)
+- Webhook endpoint exposed at /webhook
+
+Suggested Next Steps:
+
+typescriptCopy// 1. Add proper webhook response handling
+app.post('/webhook', async (req, res) => {
+  try {
+    // Add request validation
+    if (!req.body) {
+      return res.status(400).json({ error: 'Invalid request body' });
+    }
+
+    // Process webhook asynchronously
+    await processWebhook(req.body);
+    
+    // Return immediate response
+    res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 2. Implement timeout handling
+const processWebhook = async (data) => {
+  // Set timeout for long-running operations
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Operation timed out')), 25000);
+  });
+
+  try {
+    await Promise.race([
+      // Your webhook processing logic here
+      timeoutPromise
+    ]);
+  } catch (error) {
+    console.error('Process error:', error);
+    throw error;
+  }
+};
+Would you like me to:
+
+Provide the complete webhook handler implementation
+Add detailed logging to track down the 502 errors
+Implement proper request validation
+Something else?
+
+Let me know which aspect you'd like to focus on first, and I'll provide a complete solution for that part.Let me help you build a proper webhook implementation for the Coinbase Developer Platform (CDP) AgentKit integration since you're dealing with webhook 502 errors.
+CDP AgentKit Webhook HandlerClick to open code
+Key improvements in this implementation:
+
+Proper webhook signature verification
+Request validation with appropriate error responses
+Asynchronous processing with timeout handling
+Early response to prevent 502 errors
+Structured error handling and logging
+Event-specific handlers for different webhook types
+
+To use this implementation:
+
+Add these environment variables:
+
+CopyNEYNAR_API_KEY=your_key_here
+WEBHOOK_SECRET=your_webhook_secret
+SIGNER_UUID=your_signer_uuid
+
+Update the event handlers (handleCastCreated, handleReactionCreated) with your specific business logic

@@ -1,0 +1,108 @@
+CDP AgentKit Webhook Handler
+
+import express from 'express';
+import { Configuration, NeynarAPIClient } from '@neynar/nodejs-sdk';
+import * as crypto from 'crypto';
+
+// Initialize Neynar client with proper configuration
+const config = new Configuration({
+  apiKey: process.env.NEYNAR_API_KEY
+});
+const neynar = new NeynarAPIClient(config);
+
+// Webhook secret verification
+const verifyWebhookSignature = (signature: string, body: string, webhookSecret: string) => {
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const digest = hmac.update(body).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+};
+
+// Webhook processing function with timeout
+const processWebhook = async (data: any) => {
+  const timeoutDuration = 25000; // 25 second timeout
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Webhook processing timed out')), timeoutDuration);
+  });
+
+  try {
+    await Promise.race([
+      (async () => {
+        // Handle different webhook event types
+        switch (data.type) {
+          case 'cast.created':
+            await handleCastCreated(data.cast);
+            break;
+          case 'reaction.created':
+            await handleReactionCreated(data.reaction);
+            break;
+          default:
+            console.log(`Unhandled webhook event type: ${data.type}`);
+        }
+      })(),
+      timeoutPromise
+    ]);
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    throw error;
+  }
+};
+
+// Express webhook route handler
+app.post('/webhook', express.json(), async (req, res) => {
+  const signature = req.headers['x-webhook-signature'];
+  
+  try {
+    // Validate request
+    if (!req.body) {
+      return res.status(400).json({ error: 'Missing request body' });
+    }
+
+    if (!signature || typeof signature !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid signature' });
+    }
+
+    // Verify webhook signature
+    const isValid = verifyWebhookSignature(
+      signature,
+      JSON.stringify(req.body),
+      process.env.WEBHOOK_SECRET!
+    );
+
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
+
+    // Send immediate response to prevent timeout
+    res.status(200).json({ status: 'processing' });
+
+    // Process webhook asynchronously
+    await processWebhook(req.body);
+
+  } catch (error) {
+    console.error('Webhook error:', error);
+    // Don't send error response here since we already sent 200
+    // Just log it for monitoring
+  }
+});
+
+// Event handlers
+async function handleCastCreated(cast: any) {
+  try {
+    await neynar.publishCast({
+      signer_uuid: process.env.SIGNER_UUID,
+      text: `New cast from @${cast.author.username}`,
+      channel_id: "CollectorsCanyon"
+    });
+  } catch (error) {
+    console.error('Error handling cast.created:', error);
+  }
+}
+
+async function handleReactionCreated(reaction: any) {
+  try {
+    console.log('Processing reaction:', reaction);
+    // Add your reaction handling logic here
+  } catch (error) {
+    console.error('Error handling reaction.created:', error);
+  }
+}

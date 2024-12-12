@@ -20,12 +20,27 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Neynar client with proper configuration
+// Initialize Neynar client with proper v2 configuration
 const config = new Configuration({
-  apiKey: process.env.NEYNAR_API_KEY || '',
+  apiKey: process.env.NEYNAR_API_KEY || ''
 });
 
 const neynar = new NeynarAPIClient(config);
+
+// Type definitions for webhook payload
+interface WebhookPayload {
+  type: 'cast.created' | string;
+  cast?: {
+    hash: string;
+    text: string;
+    author: {
+      fid: string;
+      username: string;
+    };
+    mentions?: Array<{ fid: string }>;
+    parent_hash?: string;
+  };
+}
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -34,57 +49,64 @@ app.use((req, res, next) => {
   next();
 });
 
-// Webhook endpoint
-app.post('/webhook', async (req, res) => {
-  const requestId = Math.random().toString(36).substring(7);
-  
-  try {
-    // Verify signature
-    const signature = req.headers['x-neynar-signature'];
-    if (!signature || typeof signature !== 'string') {
-      console.error(`[${requestId}] Missing webhook signature`);
-      return res.status(401).json({ error: 'Missing signature' });
-    }
+// Webhook signature verification middleware
+const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const signature = req.headers['x-neynar-signature'];
+  if (!signature || typeof signature !== 'string') {
+    return res.status(401).json({ error: 'Missing webhook signature' });
+  }
 
+  try {
     const hmac = crypto
       .createHmac('sha256', process.env.WEBHOOK_SECRET!)
       .update(JSON.stringify(req.body))
       .digest('hex');
 
     if (`sha256=${hmac}` !== signature) {
-      console.error(`[${requestId}] Invalid webhook signature`);
-      return res.status(401).json({ error: 'Invalid signature' });
+      return res.status(401).json({ error: 'Invalid webhook signature' });
     }
 
+    next();
+  } catch (error) {
+    console.error('Webhook signature verification error:', error);
+    return res.status(500).json({ error: 'Error verifying webhook signature' });
+  }
+};
+
+// Webhook endpoint
+app.post('/webhook', verifyWebhookSignature, async (req, res) => {
+  const requestId = Math.random().toString(36).substring(7);
+  
+  try {
+    const payload = req.body as WebhookPayload;
+    
     // Log webhook receipt
     console.log(`[${requestId}] Received webhook:`, {
-      type: req.body.type,
-      cast: req.body.cast?.text,
-      author: req.body.cast?.author?.username
+      type: payload.type,
+      cast: payload.cast?.text,
+      author: payload.cast?.author?.username
     });
 
     // Send immediate response
-    res.status(200).json({ status: 'received', requestId });
+    res.status(200).json({ status: 'received' });
 
     // Process webhook asynchronously
-    if (req.body.cast) {
-      setImmediate(async () => {
-        try {
-          const { cast } = req.body;
-          
-          // Handle mentions
-          if (cast.mentions?.some((m: any) => m.fid === process.env.BOT_FID)) {
-            await handleMention(cast, requestId);
-          }
-
-          // Check for collection-related content
-          if (isCollectibleRelated(cast.text)) {
-            await shareToCollectorsCanyon(cast, requestId);
-          }
-        } catch (error) {
-          console.error(`[${requestId}] Error processing webhook:`, error);
+    if (payload.type === 'cast.created' && payload.cast) {
+      const { cast } = payload;
+      
+      try {
+        // Handle mentions if cast exists and has mentions
+        if (cast.mentions?.some(m => m.fid === process.env.BOT_FID)) {
+          await handleMention(cast, requestId);
         }
-      });
+
+        // Check for collection-related content
+        if (cast.text && isCollectibleRelated(cast.text)) {
+          await shareToCollectorsCanyon(cast, requestId);
+        }
+      } catch (error) {
+        console.error(`[${requestId}] Error processing cast:`, error);
+      }
     }
   } catch (error) {
     console.error(`[${requestId}] Webhook error:`, error);
@@ -92,7 +114,9 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-async function handleMention(cast: any, requestId: string) {
+async function handleMention(cast: WebhookPayload['cast'], requestId: string) {
+  if (!cast) return;
+  
   try {
     // Like the mention
     await neynar.publishReaction({
@@ -115,7 +139,9 @@ async function handleMention(cast: any, requestId: string) {
   }
 }
 
-async function shareToCollectorsCanyon(cast: any, requestId: string) {
+async function shareToCollectorsCanyon(cast: WebhookPayload['cast'], requestId: string) {
+  if (!cast) return;
+  
   try {
     await neynar.publishCast({
       signerUuid: process.env.SIGNER_UUID!,
