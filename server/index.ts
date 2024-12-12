@@ -177,6 +177,28 @@ app.post('/webhook', async (req: Request, res: Response) => {
 // Start server
 const { PORT } = config;
 app.listen(PORT, '0.0.0.0', () => {
+// Function to create a cast in the collectors canyon channel
+async function createChannelCast(message: string) {
+    try {
+        console.log('Creating cast in collectors canyon:', message);
+        const result = await neynar.publishCast({
+            signerUuid: config.SIGNER_UUID,
+            text: message,
+            channelId: "collectorscanyon"
+        });
+        console.log('Cast created successfully:', result);
+        return result;
+    } catch (error) {
+        console.error('Error creating cast:', error);
+        throw error;
+    }
+}
+
+// Test channel cast
+createChannelCast("Greetings, fellow collectors! Your wise friend Mienfoo is here to share the journey of collecting with you. What treasures shall we discover today? 🥋")
+    .then(() => console.log('Initial channel cast successful'))
+    .catch(error => console.error('Failed to create initial cast:', error));
+
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log('Ready to handle mentions and cast in collectors canyon');
     console.log('Bot config:', {
