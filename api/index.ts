@@ -5,26 +5,68 @@ import { handleWebhook } from './bot/handlers';
 const processedWebhookEvents = new Set<string>();
 const WEBHOOK_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
+// Enhanced request logging
+const logRequest = (req: VercelRequest) => {
+    console.log('Incoming request:', {
+        method: req.method,
+        url: req.url,
+        headers: {
+            'content-type': req.headers['content-type'],
+            'content-length': req.headers['content-length']
+        },
+        body: req.body,
+        timestamp: new Date().toISOString()
+    });
+};
+
 // Main serverless handler
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // Health check endpoint
-    if (req.method === 'GET') {
-        return res.json({ status: 'ok', message: 'Server is running' });
-    }
+    try {
+        logRequest(req);
 
-    // Webhook endpoint
-    if (req.method === 'POST' && req.url === '/api/webhook') {
-        // Send 200 OK immediately to prevent retries
-        res.status(200).send('OK');
+        // Health check endpoint
+        if (req.method === 'GET') {
+            return res.json({ status: 'ok', message: 'Server is running' });
+        }
+
+        // Webhook endpoint
+        if (req.method === 'POST' && req.url === '/api/webhook') {
+            // Enhanced error handling for webhook payload
+            if (!req.body || typeof req.body !== 'object') {
+                console.error('Invalid request body:', req.body);
+                return res.status(400).json({ error: 'Invalid request body' });
+            }
+
+            // Send 200 OK after validation to prevent retries
+            res.status(200).send('OK');
 
         try {
-            const { type, data } = req.body;
-            
-            // Early validation
-            if (!type || !data || type !== 'cast.created' || !data.hash) {
-                console.log('Invalid webhook payload:', { type, hasData: !!data });
-                return;
-            }
+                // Log the raw webhook payload
+                console.log('Processing webhook payload:', {
+                    body: req.body,
+                    contentType: req.headers['content-type'],
+                    timestamp: new Date().toISOString()
+                });
+
+                const { type, data } = req.body;
+                
+                // Enhanced validation with detailed logging
+                if (!type || !data || type !== 'cast.created' || !data.hash) {
+                    console.error('Invalid webhook payload structure:', {
+                        type,
+                        hasData: !!data,
+                        hasHash: data?.hash ? true : false,
+                        timestamp: new Date().toISOString()
+                    });
+                    return res.status(400).json({ 
+                        error: 'Invalid webhook payload structure',
+                        details: {
+                            type: !type ? 'missing' : type,
+                            data: !data ? 'missing' : 'present',
+                            hash: !data?.hash ? 'missing' : 'present'
+                        }
+                    });
+                }
 
             // Comprehensive deduplication check
             const eventId = `${type}-${data.hash}-${data.author?.username}`;
