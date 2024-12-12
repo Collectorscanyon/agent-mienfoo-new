@@ -1,0 +1,91 @@
+1. Simplify the Server Code
+Use the absolute minimal Express server to eliminate potential issues with body parsing or middleware:
+
+javascript
+Copy code
+const express = require('express');
+const app = express();
+
+// Basic logging
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+    next();
+});
+
+// Root health check
+app.get('/', (req, res) => {
+    res.send('OK');
+});
+
+// Webhook endpoint
+app.post('/webhook', (req, res) => {
+    res.status(200).send('OK'); // Immediate success response
+    console.log('Webhook triggered:', req.headers);
+});
+
+// Start server
+const PORT = 5000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+});
+2. Check Local Server Health
+Test the server locally to confirm it's running properly:
+
+bash
+Copy code
+curl http://localhost:5000
+Expected response: OK
+
+For the webhook:
+
+bash
+Copy code
+curl -X POST http://localhost:5000/webhook -H "Content-Type: application/json" -d '{"test": true}'
+Expected response: OK
+
+3. Verify Ngrok Connectivity
+Confirm ngrok is forwarding correctly:
+
+Start ngrok:
+
+bash
+Copy code
+ngrok http 5000
+Test with ngrok URL:
+
+bash
+Copy code
+curl -X POST https://[ngrok-url]/webhook -H "Content-Type: application/json" -d '{"test": true}'
+Replace [ngrok-url] with the actual URL displayed by ngrok.
+
+Expected response: OK
+
+4. Enable Debug Logging
+If issues persist, enable raw body logging to inspect the exact incoming requests:
+
+javascript
+Copy code
+app.use((req, res, next) => {
+    let rawBody = '';
+    req.on('data', (chunk) => {
+        rawBody += chunk;
+    });
+    req.on('end', () => {
+        console.log('Raw Body:', rawBody);
+        next();
+    });
+});
+This will log the raw body of incoming requests for further debugging.
+
+5. Adjust Content-Type Handling
+If Content-Type is causing problems, accept all content types:
+
+javascript
+Copy code
+app.use(express.raw({ type: '*/*' }));
+This ensures the server doesn't reject requests based on Content-Type.
+
+6. Testing Tips
+Use Invoke-RestMethod in PowerShell for structured testing.
+Ensure no conflicting processes are running on port 5000.
+Check ngrok logs (ngrok http terminal) for any dropped or malformed requests.
