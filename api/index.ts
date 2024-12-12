@@ -1,19 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { NeynarAPIClient } from '@neynar/nodejs-sdk';
-
-// Initialize Neynar client with environment variables
-const neynar = new NeynarAPIClient({ 
-    apiKey: process.env.NEYNAR_API_KEY || ''
-});
-
-// Initialize OpenAI later to prevent startup issues
-let generateBotResponse: (message: string) => Promise<string>;
-import('./bot/openai').then(module => {
-    generateBotResponse = module.generateBotResponse;
-    console.log('OpenAI module loaded successfully');
-}).catch(error => {
-    console.error('Error loading OpenAI module:', error);
-});
+import { handleWebhook } from './bot/handlers';
 
 // Track processed webhook events (with automatic cleanup)
 const processedWebhookEvents = new Set<string>();
