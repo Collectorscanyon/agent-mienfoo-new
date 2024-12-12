@@ -8,15 +8,34 @@ const neynar = new NeynarAPIClient({
   apiKey: config.NEYNAR_API_KEY
 });
 
-// Map for tracking processed casts with timestamps
-const processedCasts = new Map<string, number>();
+// Track both cast hashes and content to prevent duplicate responses
+interface ProcessedCast {
+  timestamp: number;
+  parentHash: string | null;
+  content: string;
+}
+
+const processedCasts = new Map<string, ProcessedCast>();
+const processedContents = new Map<string, Set<string>>();
 
 // Cleanup old entries periodically (every 30 minutes)
 setInterval(() => {
   const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
-  for (const [hash, timestamp] of processedCasts.entries()) {
-    if (timestamp < thirtyMinutesAgo) {
+  
+  // Cleanup processedCasts
+  for (const [hash, data] of processedCasts.entries()) {
+    if (data.timestamp < thirtyMinutesAgo) {
+      const content = data.content;
       processedCasts.delete(hash);
+      
+      // Cleanup processedContents
+      const hashes = processedContents.get(content);
+      if (hashes) {
+        hashes.delete(hash);
+        if (hashes.size === 0) {
+          processedContents.delete(content);
+        }
+      }
     }
   }
 }, 5 * 60 * 1000);
@@ -52,28 +71,57 @@ export async function handleWebhook(event: any) {
       return;
     }
 
-    // Strict deduplication by cast hash with timestamp
     const now = Date.now();
-    if (processedCasts.has(cast.hash)) {
-      console.log('Duplicate cast detected, skipping:', {
-        hash: cast.hash,
-        author: cast.author?.username,
-        processedAt: new Date(processedCasts.get(cast.hash)!).toISOString()
-      });
-      return;
-    }
-
+    
     // Early exit for bot's own messages - check before any processing
     if (isBotMessage(cast.text, cast.author)) {
       console.log('Skipping bot\'s own message:', {
         hash: cast.hash,
-        author: cast.author?.username
+        author: cast.author?.username,
+        text: cast.text
       });
       return;
     }
 
-    // Mark as processed immediately with timestamp
-    processedCasts.set(cast.hash, now);
+    // Enhanced deduplication check
+    const messageContent = `${cast.text}-${cast.parent_hash || 'root'}`;
+    const contentHashes = processedContents.get(messageContent) || new Set();
+    
+    if (contentHashes.has(cast.hash)) {
+      console.log('Exact duplicate cast detected, skipping:', {
+        hash: cast.hash,
+        content: messageContent,
+        processedAt: new Date(processedCasts.get(cast.hash)?.timestamp || 0).toISOString()
+      });
+      return;
+    }
+
+    // Check for similar content with different hash
+    if (contentHashes.size > 0) {
+      console.log('Similar content already processed, skipping:', {
+        hash: cast.hash,
+        content: messageContent,
+        existingHashes: Array.from(contentHashes)
+      });
+      return;
+    }
+
+    // Mark as processed
+    processedCasts.set(cast.hash, {
+      timestamp: now,
+      parentHash: cast.parent_hash || null,
+      content: messageContent
+    });
+    
+    contentHashes.add(cast.hash);
+    processedContents.set(messageContent, contentHashes);
+
+    console.log('Processing new cast:', {
+      hash: cast.hash,
+      author: cast.author?.username,
+      text: cast.text,
+      timestamp: new Date(now).toISOString()
+    });
 
     // Check for bot mentions
     const isMentioned = (
