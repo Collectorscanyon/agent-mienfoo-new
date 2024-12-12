@@ -10,29 +10,24 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
-// Configure body parsing middleware first
-app.use(express.json({
-  limit: '10mb',
-  verify: (req: Request, _res: Response, buf: Buffer) => {
-    (req as any).rawBody = buf.toString();
-  }
-}));
+// Basic request logging middleware
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+  next();
+});
 
-app.use(express.urlencoded({ 
-  extended: true, 
-  limit: '10mb' 
-}));
+// Configure body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log('Request received:', {
+// Detailed request logging after body parsing
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  console.log('Request details:', {
     timestamp: new Date().toISOString(),
     method: req.method,
     path: req.path,
-    headers: req.headers,
     contentType: req.headers['content-type'],
-    body: req.body,
-    rawBody: (req as any).rawBody
+    body: req.body
   });
   next();
 });
@@ -46,35 +41,21 @@ app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
   });
 });
 
-// Simple webhook handler
+// Webhook handler
 app.post(['/api/webhook', '/webhook'], (req: Request, res: Response) => {
-  const timestamp = new Date().toISOString();
-  
-  // Log the incoming request
-  console.log('Webhook request received:', {
-    timestamp,
-    method: req.method,
-    headers: req.headers,
-    body: req.body,
-    url: req.url
-  });
-
   // Send immediate 200 OK response
-  res.status(200).json({
-    success: true,
-    message: 'Webhook received',
-    timestamp,
-    receivedBody: req.body
+  res.status(200).send('OK');
+
+  // Log webhook payload
+  console.log('Webhook payload received:', {
+    timestamp: new Date().toISOString(),
+    body: req.body
   });
 
-  // Process the webhook asynchronously if it's valid
-  if (req.body && req.body.type === 'cast.created' && req.body.data) {
+  // Process webhook asynchronously
+  if (req.body?.type === 'cast.created' && req.body?.data) {
     handleWebhook(req.body).catch(error => {
-      console.error('Error processing webhook:', {
-        timestamp,
-        error: error instanceof Error ? error.message : error,
-        body: req.body
-      });
+      console.error('Webhook processing error:', error);
     });
   }
 });
