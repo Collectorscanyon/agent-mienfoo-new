@@ -17,16 +17,24 @@ export async function handleWebhook(event: any) {
   const { type, cast } = event;
   
   try {
+    console.log('Webhook received:', {
+      type,
+      timestamp: new Date().toISOString(),
+      castHash: cast?.hash,
+      authorUsername: cast?.author?.username
+    });
+
     if (type === 'cast.created') {
       // Check for mentions using both FID and username
       const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
                          cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
       
-      console.log('Mention check:', {
+      console.log('Mention detection:', {
         hasMention: isMentioned,
         botFid: config.BOT_FID,
         botUsername: config.BOT_USERNAME,
-        text: cast.text
+        text: cast.text,
+        mentions: cast.mentions
       });
 
       if (isMentioned) {
@@ -47,7 +55,13 @@ export async function handleWebhook(event: any) {
 
 async function handleMention(cast: any) {
   try {
-    console.log('Handling mention from:', cast.author.username);
+    console.log('Processing mention:', {
+      timestamp: new Date().toISOString(),
+      castHash: cast.hash,
+      author: cast.author.username,
+      text: cast.text,
+      mentions: cast.mentions
+    });
     
     // Like the mention first
     await neynar.publishReaction({
