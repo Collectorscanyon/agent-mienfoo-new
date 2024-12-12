@@ -74,30 +74,34 @@ app.post('/webhook', async (req: Request, res: Response) => {
         res.status(200).json({ status: 'success', message: 'Webhook received' });
 
         if (type === 'cast.created') {
-            // Check for mentions using both FID and username
-            const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
-                              cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
+            // Extract cast data from the webhook payload
+            const castData = req.body.data;
+            console.log('Processing cast:', castData);
+
+            // Check for mentions using both mentioned_profiles and text content
+            const isMentioned = castData.mentioned_profiles?.some((p: any) => p.fid === config.BOT_FID) ||
+                              castData.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
             
             if (isMentioned) {
-                console.log('Bot mention detected in cast:', cast.text);
+                console.log('Bot mention detected in cast:', castData.text);
                 
                 try {
                     // Like the mention
                     await neynar.publishReaction({
                         signerUuid: config.SIGNER_UUID,
                         reactionType: 'like',
-                        target: cast.hash
+                        target: castData.hash
                     });
 
                     // Generate and send response
-                    const cleanedMessage = cast.text.replace(new RegExp(`@${config.BOT_USERNAME}`, 'i'), '').trim();
+                    const cleanedMessage = castData.text.replace(new RegExp(`@${config.BOT_USERNAME}`, 'i'), '').trim();
                     const response = await generateBotResponse(cleanedMessage);
                     
                     // Reply in the collectors canyon channel
                     await neynar.publishCast({
                         signerUuid: config.SIGNER_UUID,
-                        text: `@${cast.author.username} ${response}`,
-                        parent: cast.hash,
+                        text: `@${castData.author.username} ${response}`,
+                        parent: castData.hash,
                         channelId: 'collectorscanyon'
                     });
 
