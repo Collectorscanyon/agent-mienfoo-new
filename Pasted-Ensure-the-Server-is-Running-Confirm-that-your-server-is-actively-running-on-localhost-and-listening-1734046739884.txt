@@ -1,0 +1,47 @@
+Ensure the Server is Running
+Confirm that your server is actively running on localhost and listening on port 5000.
+In your server logs, you should see a line similar to:
+arduino
+Copy code
+Server running on http://0.0.0.0:5000
+If the server isn't running, start it with the appropriate command:
+bash
+Copy code
+npm run dev
+2. Check the Port
+Ensure the server is bound to the correct port. If your server is using a port other than 5000, update the PowerShell command with the correct port:
+powershell
+Copy code
+Invoke-RestMethod -Uri http://localhost:<your-port>/api/webhook `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"testKey": "testValue"}'
+3. Firewall or Network Issues
+Check if a firewall or antivirus is blocking connections to localhost. Disable them temporarily for testing.
+Try opening http://localhost:5000 in your browser. If it doesn't load, the server may not be accessible.
+4. Verify the Webhook Route
+Confirm the route /api/webhook is correctly defined in your server code:
+javascript
+Copy code
+app.post('/api/webhook', (req, res) => {
+  console.log('Webhook received:', req.body);
+  res.status(200).send('Webhook processed');
+});
+5. Check for Bind Address
+If the server is bound to 0.0.0.0 instead of localhost, this might cause issues on Windows. Replace localhost with 127.0.0.1 in your PowerShell command:
+powershell
+Copy code
+Invoke-RestMethod -Uri http://127.0.0.1:5000/api/webhook `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"testKey": "testValue"}'
+6. Inspect Logs
+Review the server logs for errors when the request is attempted. If the request isn't reaching the server, the problem might be with network configuration or the server itself.
+7. Testing with curl
+If PowerShell's Invoke-RestMethod doesn't work, test the webhook with curl in Git Bash or WSL:
+bash
+Copy code
+curl -X POST http://localhost:5000/api/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"testKey": "testValue"}'
+Let me know what you find after trying these steps!

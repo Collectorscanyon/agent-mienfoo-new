@@ -59,24 +59,52 @@ app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
 
 // Webhook handler
 const webhookHandler = async (req: Request | VercelRequest, res: Response | VercelResponse) => {
+  const timestamp = new Date().toISOString();
+  
   try {
-    // Log incoming webhook details
+    // Log raw request details
     console.log('Webhook received:', {
-      timestamp: new Date().toISOString(),
+      timestamp,
       method: req.method,
       path: req.url,
       headers: req.headers,
-      body: req.body
+      rawBody: req.body
     });
+
+    // Validate content type
+    const contentType = req.headers['content-type'];
+    if (!contentType?.includes('application/json')) {
+      console.warn('Invalid content type:', contentType);
+      return res.status(400).json({
+        error: 'Invalid content type',
+        message: 'Content-Type must be application/json'
+      });
+    }
 
     // Validate request body
     if (!req.body || Object.keys(req.body).length === 0) {
       console.warn('Empty webhook body received');
       return res.status(400).json({
         error: 'Empty request body',
-        message: 'Please ensure Content-Type is set to application/json and the request includes a valid JSON payload'
+        message: 'Request body cannot be empty'
       });
     }
+
+    // Validate Farcaster webhook structure
+    const { type, data } = req.body;
+    if (!type || !data) {
+      console.warn('Invalid webhook structure:', req.body);
+      return res.status(400).json({
+        error: 'Invalid webhook structure',
+        message: 'Request must include type and data fields'
+      });
+    }
+
+    console.log('Processing webhook:', {
+      timestamp,
+      type,
+      data: JSON.stringify(data, null, 2)
+    });
 
     // Process webhook
     await handleWebhook(req.body);
@@ -84,14 +112,23 @@ const webhookHandler = async (req: Request | VercelRequest, res: Response | Verc
     // Send success response
     res.status(200).json({
       success: true,
-      message: 'Webhook processed successfully'
+      message: 'Webhook processed successfully',
+      timestamp
     });
   } catch (error) {
-    console.error('Webhook processing error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Webhook processing error:', {
+      timestamp,
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      } : error
+    });
+
     res.status(500).json({
       error: 'Internal server error',
-      message: errorMessage
+      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp
     });
   }
 };
