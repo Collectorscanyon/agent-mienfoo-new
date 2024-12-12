@@ -2,8 +2,16 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import type { Request, Response, NextFunction } from 'express';
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
-import { generateBotResponse } from './bot/openai';
 import { config } from './config';
+
+// Initialize OpenAI later to prevent startup issues
+let generateBotResponse: (message: string) => Promise<string>;
+import('./bot/openai').then(module => {
+    generateBotResponse = module.generateBotResponse;
+    console.log('OpenAI module loaded successfully');
+}).catch(error => {
+    console.error('Error loading OpenAI module:', error);
+});
 
 const app = express();
 
@@ -69,58 +77,75 @@ app.post('/webhook', async (req: Request, res: Response) => {
             const cast = data;
             console.log('Processing cast:', JSON.stringify(cast, null, 2));
             
-            // Check for mentions
-            const isBotMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
-                                 cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
+            // Enhanced mention detection
+            const isBotMentioned = (
+                cast.mentions?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
+                cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
+                cast.text?.toLowerCase().includes('@mienfoo.eth')
+            );
 
             if (isBotMentioned) {
                 console.log('Bot mention detected:', {
                     castHash: cast.hash,
                     author: cast.author.username,
-                    text: cast.text
+                    text: cast.text,
+                    mentions: cast.mentions
                 });
 
                 try {
+                    // Step 1: Like the mention
+                    console.log('Attempting to like cast:', cast.hash);
                     try {
-                        // Step 1: Like the mention
-                        console.log('Attempting to like cast:', cast.hash);
-                        await neynar.publishReaction({
+                        const likeResult = await neynar.publishReaction({
                             signerUuid: config.SIGNER_UUID,
                             reactionType: 'like',
                             target: cast.hash,
                         });
-                        console.log('Successfully liked the mention');
+                        console.log('Successfully liked the mention:', likeResult);
                     } catch (error) {
-                        console.error('Error liking cast:', error);
+                        console.error('Error liking cast:', error instanceof Error ? error.message : error);
+                        // Continue with reply even if like fails
                     }
 
+                    // Step 2: Generate and send response
                     try {
-                        // Step 2: Generate response
-                        const cleanedMessage = cast.text
-                            .replace(new RegExp(`@${config.BOT_USERNAME}`, 'gi'), '')
-                            .trim();
-                        console.log('Generating response for:', cleanedMessage);
+                        // Clean the message by removing all @mentions
+                        const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+                        console.log('Generating response for cleaned message:', cleanedMessage);
+                        
                         const response = await generateBotResponse(cleanedMessage);
                         console.log('Generated response:', response);
 
                         // Step 3: Reply to the mention
-                        console.log('Attempting to reply to cast:', cast.hash);
+                        console.log('Attempting to reply to cast:', {
+                            hash: cast.hash,
+                            signerUuid: config.SIGNER_UUID,
+                            author: cast.author.username
+                        });
+
+                        const replyText = `@${cast.author.username} ${response}`;
+                        console.log('Sending reply:', replyText);
+
                         const replyResult = await neynar.publishCast({
                             signerUuid: config.SIGNER_UUID,
-                            text: `@${cast.author.username} ${response}`,
+                            text: replyText,
                             parent: cast.hash,
+                            channelId: "collectorscanyon"  // Use the collectors canyon channel
                         });
-                        console.log('Reply result:', replyResult);
-                        console.log('Successfully replied to the mention');
+
+                        console.log('Reply sent successfully:', {
+                            replyHash: replyResult.cast.hash,
+                            timestamp: new Date().toISOString()
+                        });
                     } catch (error) {
-                        console.error('Error in response generation or reply:', error);
-                        if (error instanceof Error) {
-                            console.error('Error details:', {
+                        console.error('Error in response generation or reply:', {
+                            error: error instanceof Error ? {
                                 name: error.name,
                                 message: error.message,
                                 stack: error.stack
-                            });
-                        }
+                            } : error,
+                            timestamp: new Date().toISOString()
+                        });
                     }
 
                 } catch (error) {

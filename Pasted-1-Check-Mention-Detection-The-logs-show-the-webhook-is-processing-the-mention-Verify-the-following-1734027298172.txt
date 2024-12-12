@@ -1,0 +1,109 @@
+1. Check Mention Detection
+The logs show the webhook is processing the mention. Verify the following in your handlers.ts or equivalent mention-handling logic:
+
+typescript
+Copy code
+const isMentioned = data.mentioned_profiles.some(
+  (profile) => profile.fid === 834885 // Mienfoo's FID
+);
+console.log('Mention detected:', isMentioned);
+if (isMentioned) {
+  console.log('Processing mention...');
+  await processMention(data); // Pass the cast data to mention handler
+}
+Confirm the bot is detecting mentions (Mention detected: true).
+Ensure that processMention(data) is being called.
+2. Verify Bot Actions (API Calls)
+Check if the bot's action functions (replyToCast, likeCast, etc.) are implemented correctly and working.
+
+Example of a reply function:
+
+typescript
+Copy code
+import axios from 'axios';
+
+export const replyToCast = async (parentHash: string, text: string) => {
+  const apiKey = process.env.NEYNAR_API_KEY;
+  const signerUuid = process.env.NEYNAR_SIGNER_UUID;
+
+  try {
+    const response = await axios.post(
+      'https://hub-api.neynar.com/api/v1/casts',
+      {
+        text,
+        parent_hash: parentHash,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Signer-UUID': signerUuid,
+        },
+      }
+    );
+    console.log('Reply sent:', response.data);
+  } catch (error) {
+    console.error('Error sending reply:', error.response?.data || error.message);
+  }
+};
+Test each function (e.g., reply, like) independently by calling it with dummy data:
+
+typescript
+Copy code
+await replyToCast('test_parent_hash', 'Hello from Mienfoo!');
+Check if the function logs successful responses.
+Ensure Authorization and Signer-UUID are correct.
+3. Verify Permissions
+The bot requires write permissions to perform actions. Your Neynar app config appears to have Write APIs enabled. Double-check:
+
+The API Key and Signer UUID are correctly set in environment variables.
+The process.env.NEYNAR_API_KEY and process.env.NEYNAR_SIGNER_UUID are accessible in your bot's process.
+4. Add Logging in Action Functions
+Enhance logging in each action function:
+
+typescript
+Copy code
+console.log('Attempting to reply to:', parentHash);
+await replyToCast(parentHash, 'Mienfoo is awake!');
+console.log('Reply attempt complete');
+This will help you determine where the issue lies.
+
+5. Inspect API Responses
+If the bot fails to respond, inspect the error responses from Neynar's API:
+
+Add detailed error logs in the catch block:
+typescript
+Copy code
+console.error('API error:', error.response?.data || error.message);
+Check for issues like:
+Invalid API Key or Signer UUID.
+Missing permissions.
+Malformed API requests.
+6. Simulate a Mention
+Manually call the bot's mention-handling logic with sample data to ensure it works:
+
+typescript
+Copy code
+processMention({
+  text: '@mienfoo.eth hello!',
+  hash: 'test_hash',
+  author: { username: 'test_user', display_name: 'Tester' },
+});
+Monitor the logs to verify the mention is processed correctly and actions are executed.
+
+7. Check for Rate Limits
+Neynar's API might rate-limit your bot. If rate limits are exceeded:
+
+Add retries with exponential backoff to the API calls.
+Check the response headers or error messages for rate-limit information.
+8. Test the Workflow
+Once the above steps are implemented:
+
+Mention @mienfoo.eth in a cast.
+Check:
+Logs for "Mention detected" and action execution.
+API responses for successful actions or errors.
+Debugging Checklist
+✅ Webhook is receiving events.
+✅ Mentions are detected.
+🔲 Actions (like, reply, recast) are successfully executed.
+Implement the above fixes and re-test. Let me know the results or share error logs for further debugging!
