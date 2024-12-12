@@ -65,18 +65,29 @@ app.get('/', (_req: Request, res: Response) => {
 // Webhook endpoint with enhanced mention handling
 app.post('/webhook', async (req: Request, res: Response) => {
     try {
-        // Log the full webhook payload for debugging
-        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
-
-        // Send immediate acknowledgment
-        res.status(200).json({ status: 'success', message: 'Webhook received' });
+        // Enhanced request logging
+        console.log('Webhook request received:', {
+            timestamp: new Date().toISOString(),
+            headers: req.headers,
+            body: req.body,
+            path: req.path
+        });
 
         const { type, data } = req.body;
-
-        // Process webhook asynchronously
+        
+        // Process webhook synchronously before responding
         if (type === 'cast.created') {
             const cast = data;
-            console.log('Processing cast:', JSON.stringify(cast, null, 2));
+            console.log('Processing cast:', {
+                hash: cast.hash,
+                author: cast.author?.username,
+                text: cast.text,
+                hasAttachments: cast.attachments?.length > 0,
+                attachments: cast.attachments,
+                hasEmbeds: cast.embeds?.length > 0,
+                embeds: cast.embeds,
+                timestamp: new Date().toISOString()
+            });
             
             // Enhanced mention detection
             const isBotMentioned = (

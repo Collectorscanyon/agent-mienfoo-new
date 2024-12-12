@@ -8,16 +8,29 @@ const neynar = new NeynarAPIClient({
 });
 
 export async function handleWebhook(event: any) {
-  const { type, cast } = event;
-  
   try {
-    console.log('Webhook received:', {
+    console.log('Webhook handler started:', {
+      eventType: event?.type,
+      timestamp: new Date().toISOString(),
+      rawEvent: event
+    });
+
+    if (!event || !event.type || !event.data) {
+      console.error('Invalid webhook event structure:', event);
+      return;
+    }
+
+    const { type, data: cast } = event;
+    
+    console.log('Processing webhook event:', {
       type,
       timestamp: new Date().toISOString(),
       castHash: cast?.hash,
       authorUsername: cast?.author?.username,
       hasAttachments: cast?.attachments?.length > 0,
-      attachments: cast?.attachments
+      attachments: cast?.attachments,
+      hasEmbeds: cast?.embeds?.length > 0,
+      embeds: cast?.embeds
     });
 
     if (type === 'cast.created') {
