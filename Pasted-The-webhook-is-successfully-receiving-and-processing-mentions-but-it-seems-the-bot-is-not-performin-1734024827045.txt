@@ -1,0 +1,63 @@
+The webhook is successfully receiving and processing mentions, but it seems the bot is not performing actions (like, recast, or reply) after identifying the mention. Let's address this step by step:
+
+Steps to Fix and Test Bot Responses
+1. Ensure API Integration for Bot Actions
+The webhook logic should make API calls to Farcaster's APIs to perform actions like liking, recasting, and replying to mentions. Here’s an updated function to implement these actions:
+
+typescript
+Copy code
+// Function to perform bot actions
+async function performBotActions(castHash: string, text: string) {
+    const replyText = "Hello! Thanks for mentioning me. 🥋"; // Example reply text
+
+    try {
+        // Like the cast
+        console.log(`Liking cast: ${castHash}`);
+        await likeCast(castHash);
+
+        // Recast the cast
+        console.log(`Recasting cast: ${castHash}`);
+        await recastCast(castHash);
+
+        // Reply to the cast
+        console.log(`Replying to cast: ${castHash}`);
+        await replyToCast(castHash, replyText);
+    } catch (error) {
+        console.error("Error performing bot actions:", error);
+    }
+}
+
+// API call to like a cast
+async function likeCast(castHash: string) {
+    // Use Farcaster's API client or HTTP library to send the "like" request
+    console.log(`Sending like request for cast ${castHash}`);
+    // Example API call logic:
+    // await axios.post(`https://farcaster-api.com/casts/${castHash}/like`, { ...headers });
+}
+
+// API call to recast
+async function recastCast(castHash: string) {
+    console.log(`Sending recast request for cast ${castHash}`);
+    // Example API call logic:
+    // await axios.post(`https://farcaster-api.com/casts/${castHash}/recast`, { ...headers });
+}
+
+// API call to reply
+async function replyToCast(parentHash: string, text: string) {
+    console.log(`Sending reply request to cast ${parentHash}`);
+    // Example API call logic:
+    // await axios.post(`https://farcaster-api.com/casts`, {
+    //     text,
+    //     parent_hash: parentHash,
+    //     ...headers
+    // });
+}
+Replace the placeholder axios.post calls with the actual Farcaster API client or HTTP requests. Ensure you have the necessary authentication tokens and permissions to interact with the Farcaster APIs.
+
+2. Add Debugging Logs
+If the bot is not responding, it could be due to:
+
+Missing or invalid API tokens.
+Errors in API calls.
+Incorrect API endpoint configurations.
+Add logs in each step to confirm whether the API calls are made successfully or if they fail with specific errors.

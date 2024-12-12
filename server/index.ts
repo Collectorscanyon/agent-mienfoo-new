@@ -7,16 +7,9 @@ import { config } from './config';
 
 const app = express();
 
-// Initialize Neynar client
+// Initialize Neynar client with standard config
 const neynar = new NeynarAPIClient({ 
-    apiKey: config.NEYNAR_API_KEY,
-    configuration: {
-        baseOptions: {
-            headers: {
-                "x-neynar-api-key": config.NEYNAR_API_KEY
-            }
-        }
-    }
+    apiKey: config.NEYNAR_API_KEY 
 });
 
 // Detailed request logging
@@ -72,33 +65,28 @@ app.post('/webhook', async (req: Request, res: Response) => {
         const { type, data } = req.body;
 
         // Process webhook asynchronously
-        if (type === 'cast.created' && data?.mentioned_profiles) {
-            console.log('Processing cast:', JSON.stringify(data, null, 2));
+        if (type === 'cast.created') {
+            const cast = data;
+            console.log('Processing cast:', JSON.stringify(cast, null, 2));
             
-            // Check if bot was mentioned
-            const isBotMentioned = data.mentioned_profiles.some((profile: any) => 
-                profile.fid === config.BOT_FID ||
-                profile.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase()
-            );
+            // Check for mentions
+            const isBotMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
+                                 cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
 
             if (isBotMentioned) {
                 console.log('Bot mention detected:', {
-                    castHash: data.hash,
-                    author: data.author.username,
-                    text: data.text
+                    castHash: cast.hash,
+                    author: cast.author.username,
+                    text: cast.text
                 });
 
                 try {
                     // Step 1: Like the mention
-                    await neynar.publishReaction({
-                        signerUuid: config.SIGNER_UUID,
-                        reactionType: 'like',
-                        target: data.hash
-                    });
+                    await neynar.reactions.cast.like(config.SIGNER_UUID, cast.hash);
                     console.log('Successfully liked the mention');
 
                     // Step 2: Generate response
-                    const cleanedMessage = data.text
+                    const cleanedMessage = cast.text
                         .replace(new RegExp(`@${config.BOT_USERNAME}`, 'gi'), '')
                         .trim();
                     const response = await generateBotResponse(cleanedMessage);
@@ -107,9 +95,8 @@ app.post('/webhook', async (req: Request, res: Response) => {
                     // Step 3: Reply to the mention
                     await neynar.publishCast({
                         signerUuid: config.SIGNER_UUID,
-                        text: `@${data.author.username} ${response}`,
-                        parent: data.hash,
-                        channelId: 'collectorscanyon'
+                        text: `@${cast.author.username} ${response}`,
+                        parent: cast.hash
                     });
                     console.log('Successfully replied to the mention');
 
