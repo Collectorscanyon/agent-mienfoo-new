@@ -5,7 +5,8 @@
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.ts" },
-    { "src": "/webhook", "dest": "/api/index.ts" }
+    { "src": "/webhook", "dest": "/api/index.ts" },
+    { "src": "/", "methods": ["POST"], "dest": "/api/index.ts" }
   ],
   "env": {
     "NEYNAR_API_KEY": "@neynar_api_key",

@@ -49,8 +49,8 @@ app.get('/', (req: Request, res: Response) => {
     });
 });
 
-// Webhook endpoint
-app.post('/webhook', async (req: Request, res: Response) => {
+// Webhook endpoint with enhanced error handling and validation
+app.post(['/', '/webhook'], async (req: Request, res: Response) => {
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);
   
@@ -64,6 +64,23 @@ app.post('/webhook', async (req: Request, res: Response) => {
     hasOpenAIKey: !!process.env.OPENAI_API_KEY,
     hasNeynarKey: !!process.env.NEYNAR_API_KEY
   });
+
+  // Verify webhook signature if present
+  const signature = req.headers['x-neynar-signature'];
+  if (signature && process.env.WEBHOOK_SECRET) {
+    const crypto = await import('crypto');
+    const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+    const computedSignature = hmac.update(JSON.stringify(req.body)).digest('hex');
+    
+    if (computedSignature !== signature) {
+      console.error('Invalid webhook signature:', {
+        requestId,
+        timestamp,
+        path: req.path
+      });
+      return res.status(401).send('Invalid webhook signature');
+    }
+  }
 
   // Check if the payload includes required fields
   const { type, data } = req.body;
@@ -107,26 +124,45 @@ app.post('/webhook', async (req: Request, res: Response) => {
         processingStart: new Date().toISOString()
       });
 
-      // Import and use handler for cast processing
-      const { handleWebhook } = await import('./bot/handlers');
-      
-      await handleWebhook({
-        type: 'cast.created',
-        data: {
-          hash: data.hash,
-          text: data.text,
-          author: data.author,
-          thread_hash: data.thread_hash
-        }
-      });
-      const processingTime = Date.now() - startTime;
+      // Process webhook asynchronously
+      setImmediate(async () => {
+        try {
+          const { handleWebhook } = await import('./bot/handlers');
+          
+          await handleWebhook({
+            type: 'cast.created',
+            data: {
+              hash: data.hash,
+              text: data.text,
+              author: data.author,
+              thread_hash: data.thread_hash,
+              mentioned_profiles: data.mentioned_profiles || []
+            }
+          });
 
-      console.log('Cast processing completed:', {
-        requestId,
-        timestamp,
-        hash: data.hash,
-        processingTimeMs: processingTime,
-        success: true
+          console.log('Cast processing completed:', {
+            requestId,
+            timestamp,
+            hash: data.hash,
+            processingTimeMs: Date.now() - startTime,
+            success: true
+          });
+        } catch (error) {
+          console.error('Error in async webhook processing:', {
+            requestId,
+            timestamp,
+            error: error instanceof Error ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack
+            } : error,
+            data: {
+              hash: data.hash,
+              hasText: !!data.text,
+              hasAuthor: !!data.author
+            }
+          });
+        }
       });
     } else {
       console.log('Skipping non-cast or empty text event:', {
@@ -137,7 +173,7 @@ app.post('/webhook', async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('Error processing webhook:', {
+    console.error('Error in webhook handler:', {
       requestId,
       timestamp,
       error: error instanceof Error ? {
