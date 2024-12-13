@@ -9,7 +9,7 @@ const router = Router();
 // Track processed mentions to prevent duplicates
 const processedMentions = new Set<string>();
 
-// Verify Neynar webhook signature
+// Verify Neynar webhook signature with proper prefix handling
 function verifySignature(req: Request): boolean {
   const signature = req.headers['x-neynar-signature'];
   if (!signature || !config.WEBHOOK_SECRET) {
@@ -22,16 +22,19 @@ function verifySignature(req: Request): boolean {
     const digest = hmac.update(req.rawBody).digest('hex');
     const expectedSignature = `sha256=${digest}`;
     
-    logger.info('Signature verification:', {
+    logger.info('Debug: Signature verification:', {
       timestamp: new Date().toISOString(),
-      receivedSignature: (signature as string).substring(0, 15) + '...',
-      expectedSignature: expectedSignature.substring(0, 15) + '...',
-      matches: expectedSignature === signature
+      receivedSignature: signature.toString().substring(0, 20) + '...',
+      expectedSignature: expectedSignature.substring(0, 20) + '...',
+      matches: expectedSignature === signature.toString()
     });
 
-    return expectedSignature === signature;
+    return crypto.timingSafeEqual(
+      Buffer.from(signature.toString()),
+      Buffer.from(expectedSignature)
+    );
   } catch (error) {
-    logger.error('Signature verification error:', {
+    logger.error('Debug: Signature verification error:', {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });
@@ -48,25 +51,29 @@ router.post('/', express.json({
 }), async (req: Request, res: Response) => {
   const requestId = crypto.randomBytes(4).toString('hex');
   
-  logger.info('Webhook received:', {
+  logger.info('Debug: Webhook received:', {
     requestId,
     timestamp: new Date().toISOString(),
     headers: {
       'content-type': req.headers['content-type'],
       'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
-    }
+    },
+    body: JSON.stringify(req.body).substring(0, 200) + '...'
   });
 
   try {
-    // Verify signature in production
-    if (process.env.NODE_ENV === 'production' && !verifySignature(req)) {
-      logger.error('Invalid signature:', { requestId });
+    // Always verify signature in all environments for testing
+    if (!verifySignature(req)) {
+      logger.error('Debug: Invalid signature:', { 
+        requestId,
+        timestamp: new Date().toISOString()
+      });
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
     const { type, data } = req.body;
 
-    logger.info('Processing webhook:', {
+    logger.info('Debug: Processing webhook:', {
       requestId,
       timestamp: new Date().toISOString(),
       type,
