@@ -45,7 +45,7 @@ app.get('/', (_req: Request, res: Response) => {
 });
 
 // Register webhook routes
-app.use('/api', webhookRouter);
+app.use('/api/webhook', webhookRouter);
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

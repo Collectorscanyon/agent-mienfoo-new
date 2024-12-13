@@ -13,7 +13,7 @@
         "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
         "Access-Control-Max-Age": "86400"
       },
-      "dest": "/api/index.ts"
+      "dest": "/api/routes/webhook.ts"
     },
     {
       "src": "/api/webhook",
@@ -26,7 +26,10 @@
       },
       "status": 204
     },
-    { "src": "/api/(.*)", "dest": "/api/index.ts" }
+    { 
+      "src": "/", 
+      "dest": "/api/index.ts" 
+    }
   ],
   "env": {
     "NEYNAR_API_KEY": "@neynar_api_key",

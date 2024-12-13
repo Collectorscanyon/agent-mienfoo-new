@@ -147,7 +147,7 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // Webhook endpoint
-router.post('/', logRequest, express.json(), validateWebhook, async (req: Request, res: Response) => {
+router.post('/', express.json(), logRequest, validateWebhook, async (req: Request, res: Response) => {
   const { requestId, timestamp, clientIp } = res.locals;
 
   try {
