@@ -6,7 +6,8 @@
   "functions": {
     "api/*.ts": {
       "memory": 1024,
-      "maxDuration": 60
+      "maxDuration": 60,
+      "runtime": "nodejs20"
     }
   },
   "builds": [
@@ -15,7 +16,7 @@
       "use": "@vercel/node",
       "config": {
         "includeFiles": ["api/**"],
-        "runtime": "nodejs20"
+        "maxLambdaSize": "50mb"
       }
     }
   ],
@@ -28,7 +29,8 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
-        "Access-Control-Max-Age": "86400"
+        "Access-Control-Max-Age": "86400",
+        "Cache-Control": "no-store, no-cache"
       }
     },
     {
@@ -43,8 +45,13 @@
       }
     },
     {
-      "src": "/api",
-      "dest": "/api/index.ts"
+      "src": "/api/(.*)",
+      "dest": "/api/$1.ts",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type"
+      }
     }
   ],
   "env": {

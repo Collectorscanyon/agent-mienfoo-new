@@ -1,11 +1,15 @@
 import { build } from 'esbuild';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function bundle() {
   try {
     const commonConfig = {
       bundle: true,
       platform: 'node',
-      target: 'node18',
+      target: 'node20',
       format: 'esm',
       external: [
         '@vercel/node',
@@ -17,19 +21,44 @@ async function bundle() {
       sourcemap: true,
       logLevel: 'info',
       metafile: true,
+      outbase: 'api',
+      define: {
+        'process.env.NODE_ENV': '"production"'
+      }
     };
 
     const entryPoints = [
-      'api/index.ts',
-      'api/webhook.ts',
-      'api/health.ts'
-    ];
+      'index.ts',
+      'webhook.ts',
+      'health.ts',
+      'config.ts'
+    ].map(file => resolve(__dirname, file));
+
+    console.log('Building API functions with configuration:', {
+      entryPoints,
+      target: commonConfig.target,
+      format: commonConfig.format
+    });
 
     for (const entry of entryPoints) {
+      const outfile = resolve(__dirname, 'dist', entry.replace(__dirname, '').replace('.ts', '.js'));
+      
+      console.log(`Building ${entry} -> ${outfile}`);
+      
       await build({
         ...commonConfig,
         entryPoints: [entry],
-        outfile: `dist/${entry.replace('.ts', '.js')}`,
+        outfile,
+        plugins: [
+          {
+            name: 'externalize-deps',
+            setup(build) {
+              build.onResolve({ filter: /^[^./]|^\.[^./]|^\.\.[^/]/ }, args => ({
+                external: true
+              }));
+            },
+          },
+        ],
       });
     }
 
