@@ -4,96 +4,83 @@ import { config } from '../config/environment';
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import OpenAI from 'openai';
 
-interface WebhookRequest extends Request {
-  rawBody?: Buffer;
-}
-
 const router = Router();
 
+// Initialize Neynar client with v2 SDK configuration
 const neynarConfig = new Configuration({
   apiKey: config.NEYNAR_API_KEY!,
-  signerUuid: config.SIGNER_UUID
+  baseOptions: {
+    headers: {
+      "x-neynar-api-version": "v2"
+    }
+  }
 });
 
 const neynar = new NeynarAPIClient(neynarConfig);
 const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
-// Track processed mentions
+// Track processed mentions to prevent duplicates
 const processedMentions = new Set<string>();
 
-// Verify webhook signature
-function verifySignature(signature: string | undefined, body: Buffer): boolean {
-  console.log('Debug: Verifying signature:', {
-    timestamp: new Date().toISOString(),
-    hasSignature: !!signature,
-    hasWebhookSecret: !!config.WEBHOOK_SECRET,
-    bodyLength: body?.length,
-    environment: process.env.NODE_ENV
+// Enhanced request logging middleware
+router.use((req: Request, res: Response, next) => {
+  const requestId = crypto.randomBytes(4).toString('hex');
+  const timestamp = new Date().toISOString();
+
+  console.log('Debug: Incoming webhook request:', {
+    requestId,
+    timestamp,
+    method: req.method,
+    path: req.path,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing',
+      'user-agent': req.headers['user-agent']
+    },
+    body: req.method === 'POST' ? JSON.stringify(req.body, null, 2) : undefined
   });
 
-  // Skip verification in development
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('Debug: Skipping signature verification in development/testing');
-    return true;
-  }
-
-  if (!signature || !config.WEBHOOK_SECRET || !body) {
-    console.log('Debug: Missing required verification components:', {
-      hasSignature: !!signature,
-      hasSecret: !!config.WEBHOOK_SECRET,
-      hasBody: !!body
+  // Track response
+  const oldSend = res.send;
+  res.send = function(data) {
+    console.log('Debug: Outgoing response:', {
+      requestId,
+      timestamp: new Date().toISOString(),
+      statusCode: res.statusCode,
+      body: data
     });
-    return false;
-  }
+    return oldSend.apply(res, arguments as any);
+  };
 
-  try {
-    const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
-    const calculatedSignature = `sha256=${hmac.update(body).digest('hex')}`;
-    
-    console.log('Debug: Signature comparison:', {
-      received: signature.slice(0, 20) + '...',
-      calculated: calculatedSignature.slice(0, 20) + '...'
-    });
-    
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(calculatedSignature)
-    );
-  } catch (error) {
-    console.error('Debug: Signature verification error:', error);
-    return false;
-  }
-}
+  next();
+});
 
 // Webhook endpoint
 router.post('/', express.json({
   verify: (req: any, res, buf) => {
-    req.rawBody = buf;
+    req.rawBody = buf.toString();
   },
   limit: '50kb'
-}), async (req: WebhookRequest, res: Response) => {
+}), async (req: Request, res: Response) => {
   const requestId = crypto.randomBytes(4).toString('hex');
   
   try {
-    // Log full request details
-    console.log('Debug: Incoming webhook request:', {
+    console.log('Debug: Processing webhook:', {
       requestId,
       timestamp: new Date().toISOString(),
-      method: req.method,
-      path: req.path,
-      headers: {
-        'content-type': req.headers['content-type'],
-        'content-length': req.headers['content-length'],
-        'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing',
-        'user-agent': req.headers['user-agent']
-      },
-      body: JSON.stringify(req.body, null, 2)
+      type: req.body?.type,
+      data: {
+        hash: req.body?.data?.hash,
+        text: req.body?.data?.text,
+        author: req.body?.data?.author?.username,
+        mentionedProfiles: req.body?.data?.mentioned_profiles
+      }
     });
 
-    // Skip signature verification in development
+    // Verify signature in production
     if (process.env.NODE_ENV === 'production') {
       const signature = req.headers['x-neynar-signature'] as string;
-      if (!verifySignature(signature, req.rawBody!)) {
+      if (!signature || !verifySignature(signature, req.rawBody!)) {
         console.error('Debug: Invalid signature:', {
           requestId,
           timestamp: new Date().toISOString()
@@ -104,110 +91,121 @@ router.post('/', express.json({
 
     const { type, data } = req.body;
     
-    console.log('Debug: Processing webhook:', {
-      requestId,
-      type,
-      data: {
-        hash: data?.hash,
-        text: data?.text,
-        author: data?.author?.username,
-        mentionedProfiles: data?.mentioned_profiles
-      }
-    });
-
     if (type !== 'cast.created') {
       return res.status(200).json({ status: 'ignored', reason: 'not a cast event' });
     }
 
-    const { hash, text, mentioned_profiles } = data;
-
     // Skip if already processed
-    if (processedMentions.has(hash)) {
+    if (processedMentions.has(data.hash)) {
       console.log('Debug: Skipping duplicate mention:', {
         requestId,
-        hash
+        hash: data.hash
       });
       return res.status(200).json({ status: 'ignored', reason: 'already processed' });
     }
 
     // Check for bot mention
-    console.log('Debug: Checking bot mention:', {
-      requestId,
-      mentioned_profiles,
-      botUsername: config.BOT_USERNAME || 'mienfoo.eth',
-      text
-    });
-
-    const isBotMentioned = mentioned_profiles?.some(
+    const isBotMentioned = data.mentioned_profiles?.some(
       (profile: any) => profile.username.toLowerCase() === (config.BOT_USERNAME || 'mienfoo.eth').toLowerCase()
     );
 
+    console.log('Debug: Bot mention check:', {
+      requestId,
+      text: data.text,
+      mentioned_profiles: data.mentioned_profiles,
+      isBotMentioned,
+      botUsername: config.BOT_USERNAME
+    });
+
     if (!isBotMentioned) {
-      console.log('Debug: Bot not mentioned:', {
-        requestId,
-        text,
-        mentioned_profiles: mentioned_profiles?.map((p: any) => p.username)
-      });
       return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
     }
 
-    console.log('Debug: Bot mention confirmed:', {
-      requestId,
-      text
-    });
-
-    // Generate response
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        {
-          role: "system",
-          content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
+    // Generate and post response
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [
+          {
+            role: "system",
+            content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
 Keep responses concise (max 280 chars), friendly, and focused on collecting advice. 
 Always end your responses with /collectorscanyon`
-        },
-        { role: "user", content: text }
-      ],
-      max_tokens: 100,
-      temperature: 0.7
-    });
+          },
+          { role: "user", content: data.text }
+        ],
+        max_tokens: 100,
+        temperature: 0.7
+      });
 
-    let response = completion.choices[0].message.content;
-    if (!response?.endsWith('/collectorscanyon')) {
-      response = `${response} /collectorscanyon`;
+      let response = completion.choices[0].message.content;
+      if (!response?.endsWith('/collectorscanyon')) {
+        response = `${response} /collectorscanyon`;
+      }
+
+      console.log('Debug: Generated response:', {
+        requestId,
+        response
+      });
+
+      await neynar.publishCast({
+        signer_uuid: config.SIGNER_UUID!,
+        text: response,
+        parent_cast_id: { hash: data.hash }
+      });
+
+      // Mark as processed
+      processedMentions.add(data.hash);
+
+      // Clean up old mentions after 10 minutes
+      setTimeout(() => processedMentions.delete(data.hash), 10 * 60 * 1000);
+
+      console.log('Debug: Successfully processed mention:', {
+        requestId,
+        hash: data.hash,
+        response
+      });
+
+      res.status(200).json({ status: 'success' });
+    } catch (error) {
+      console.error('Debug: Error processing mention:', {
+        requestId,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error,
+        hash: data.hash
+      });
+      throw error;
     }
-
-    console.log('Debug: Posting response:', {
-      requestId,
-      response,
-      parentHash: hash
-    });
-
-    // Post response
-    await neynar.publishCast({
-      signerUuid: config.SIGNER_UUID!,
-      text: response,
-      replyTo: hash
-    });
-
-    // Mark as processed
-    processedMentions.add(hash);
-
-    console.log('Debug: Response posted successfully:', {
-      requestId,
-      hash,
-      timestamp: new Date().toISOString()
-    });
-
-    res.status(200).json({ status: 'success' });
   } catch (error) {
-    console.error('Debug: Error processing webhook:', {
+    console.error('Debug: Webhook error:', {
       requestId,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      } : error
     });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Verify webhook signature
+function verifySignature(signature: string | undefined, body: string): boolean {
+  if (!signature || !config.WEBHOOK_SECRET) {
+    return false;
+  }
+
+  try {
+    const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
+    const calculatedSignature = hmac.update(body).digest('hex');
+    return signature === calculatedSignature;
+  } catch (error) {
+    console.error('Debug: Signature verification error:', error);
+    return false;
+  }
+}
 
 export default router;

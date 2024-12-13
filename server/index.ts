@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import OpenAI from 'openai';
 import crypto from 'crypto';
 import { config } from './config/environment';
@@ -9,11 +9,16 @@ const app = express();
 const port = 5000;
 
 // Initialize API clients with proper configuration
-const neynar = new NeynarAPIClient({
+const neynarConfig = new Configuration({
   apiKey: config.NEYNAR_API_KEY!,
-  signerUuid: config.SIGNER_UUID
+  baseOptions: {
+    headers: {
+      "x-neynar-api-version": "v2"
+    }
+  }
 });
 
+const neynar = new NeynarAPIClient(neynarConfig);
 const openai = new OpenAI({ 
   apiKey: config.OPENAI_API_KEY,
   maxRetries: 3,
