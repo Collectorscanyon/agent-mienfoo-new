@@ -22,26 +22,41 @@ const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 // Track processed mentions to prevent duplicates
 const processedMentions = new Set<string>();
 
-// Enhanced request logging middleware
+// Enhanced request logging middleware with structured logging
 router.use((req: Request, res: Response, next) => {
   const requestId = crypto.randomBytes(4).toString('hex');
+  const timestamp = new Date().toISOString();
   
-  console.log('Debug: Incoming webhook request:', {
+  // Log full request details for debugging
+  console.log('Webhook request received:', {
     requestId,
-    timestamp: new Date().toISOString(),
+    timestamp,
     method: req.method,
     path: req.path,
     headers: {
       'content-type': req.headers['content-type'],
-      'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
+      'x-neynar-signature': req.headers['x-neynar-signature'] ? 
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing',
+      'user-agent': req.headers['user-agent']
     },
-    body: req.method === 'POST' ? JSON.stringify(req.body, null, 2) : undefined
+    body: req.method === 'POST' ? {
+      type: req.body?.type,
+      data: req.body?.data ? {
+        hash: req.body.data.hash,
+        text: req.body.data.text,
+        author: req.body.data.author ? {
+          username: req.body.data.author.username,
+          fid: req.body.data.author.fid
+        } : null,
+        mentioned_profiles: req.body.data.mentioned_profiles
+      } : null
+    } : undefined
   });
 
-  // Track response
+  // Add response tracking
   const oldSend = res.send;
   res.send = function(data) {
-    console.log('Debug: Outgoing response:', {
+    console.log('Webhook response:', {
       requestId,
       timestamp: new Date().toISOString(),
       statusCode: res.statusCode,
@@ -69,7 +84,7 @@ function verifySignature(signature: string | undefined, body: string): boolean {
   }
 }
 
-// Main webhook endpoint
+// Main webhook endpoint with enhanced validation and processing
 router.post('/', express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -77,27 +92,32 @@ router.post('/', express.json({
   limit: '50kb'
 }), async (req: Request, res: Response) => {
   const requestId = crypto.randomBytes(4).toString('hex');
+  const timestamp = new Date().toISOString();
   
-  try {
-    console.log('Debug: Processing webhook:', {
-      requestId,
-      timestamp: new Date().toISOString(),
-      type: req.body?.type,
-      data: {
-        hash: req.body?.data?.hash,
-        text: req.body?.data?.text,
-        author: req.body?.data?.author?.username,
-        mentionedProfiles: req.body?.data?.mentioned_profiles
-      }
-    });
+  console.log('Processing webhook:', {
+    requestId,
+    timestamp,
+    type: req.body?.type,
+    data: req.body?.data ? {
+      hash: req.body.data.hash,
+      text: req.body.data.text,
+      author: req.body.data.author?.username,
+      mentioned_profiles: req.body.data.mentioned_profiles?.map((p: any) => ({
+        username: p.username,
+        fid: p.fid
+      }))
+    } : null
+  });
 
-    // Verify signature in production
+  try {
+    // Enhanced signature verification with detailed logging
     if (process.env.NODE_ENV === 'production') {
       const signature = req.headers['x-neynar-signature'] as string;
       if (!signature || !verifySignature(signature, req.rawBody!)) {
-        console.error('Debug: Invalid signature:', {
+        console.warn('Invalid webhook signature:', {
           requestId,
-          timestamp: new Date().toISOString()
+          timestamp,
+          signature: signature ? `${signature.substring(0, 10)}...` : 'missing'
         });
         return res.status(401).json({ error: 'Invalid signature' });
       }
@@ -105,108 +125,221 @@ router.post('/', express.json({
 
     const { type, data } = req.body;
     
+    if (!type || !data) {
+      console.warn('Invalid webhook payload:', {
+        requestId,
+        timestamp,
+        type,
+        hasData: !!data
+      });
+      return res.status(400).json({ error: 'Invalid payload structure' });
+    }
+
     if (type !== 'cast.created') {
+      console.log('Ignoring non-cast event:', {
+        requestId,
+        timestamp,
+        type
+      });
       return res.status(200).json({ status: 'ignored', reason: 'not a cast event' });
     }
 
-    // Skip if already processed
+    // Enhanced duplicate detection
     if (processedMentions.has(data.hash)) {
-      console.log('Debug: Skipping duplicate mention:', {
+      console.log('Skipping duplicate mention:', {
         requestId,
-        hash: data.hash
+        timestamp,
+        hash: data.hash,
+        text: data.text
       });
       return res.status(200).json({ status: 'ignored', reason: 'already processed' });
     }
 
-    // Check for bot mention with enhanced logging
-    const isBotMentioned = data.mentioned_profiles?.some(
-      (profile: any) => 
-        profile.username.toLowerCase() === 'mienfoo.eth' ||
-        profile.fid === '834885'
-    );
-
-    console.log('Debug: Bot mention check:', {
-      requestId,
-      text: data.text,
-      mentioned_profiles: data.mentioned_profiles,
-      isBotMentioned,
-      botUsername: config.BOT_USERNAME
+    // Enhanced bot mention detection with multiple checks
+    const isBotMentioned = data.mentioned_profiles?.some((profile: any) => {
+      const isMatch = 
+        profile.username?.toLowerCase() === 'mienfoo.eth' ||
+        profile.fid?.toString() === '834885' ||
+        data.text?.toLowerCase().includes('@mienfoo.eth');
+      
+      console.log('Bot mention check:', {
+        requestId,
+        timestamp,
+        profileUsername: profile.username,
+        profileFid: profile.fid,
+        textMention: data.text?.toLowerCase().includes('@mienfoo.eth'),
+        isMatch
+      });
+      
+      return isMatch;
     });
 
     if (!isBotMentioned) {
+      console.log('No bot mention detected:', {
+        requestId,
+        timestamp,
+        text: data.text,
+        mentioned_profiles: data.mentioned_profiles
+      });
       return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
     }
 
-    // Process mention and generate response
+    console.log('Processing bot mention:', {
+      requestId,
+      timestamp,
+      text: data.text,
+      author: data.author.username,
+      hash: data.hash
+    });
+
+    // Generate response with improved error handling
     try {
       const completion = await openai.chat.completions.create({
         model: "gpt-4-turbo-preview",
         messages: [
           {
             role: "system",
-            content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
-Keep responses concise (max 280 chars), friendly, and focused on collecting advice. 
-Always end your responses with /collectorscanyon`
+            content: `You are Mienfoo, a knowledgeable Pokémon card collector bot.
+Your responses should be:
+- Concise (max 280 chars)
+- Friendly and helpful
+- Focused on Pokémon card collecting advice
+- Always end with /collectorscanyon
+- Include specific card knowledge when relevant`
           },
-          { role: "user", content: data.text }
+          { 
+            role: "user", 
+            content: data.text.replace(/@[\w.]+/g, '').trim() // Clean mentions from text
+          }
         ],
         max_tokens: 100,
         temperature: 0.7
       });
 
-      let response = completion.choices[0].message.content;
-      if (!response?.endsWith('/collectorscanyon')) {
+      let response = completion.choices[0]?.message?.content;
+      if (!response) {
+        throw new Error('Empty response from OpenAI');
+      }
+
+      // Ensure proper response formatting
+      if (!response.endsWith('/collectorscanyon')) {
         response = `${response} /collectorscanyon`;
       }
 
-      console.log('Debug: Generated response:', {
+      console.log('Generated response:', {
         requestId,
-        response
+        timestamp,
+        response,
+        parentHash: data.hash
       });
 
-      // Post the response
-      await neynar.publishCast({
-        signerUuid: config.SIGNER_UUID!,
-        text: `@${data.author.username} ${response}`,
-        parent: data.hash,
-        channelId: 'collectorscanyon'
-      });
+      // Like the original cast first
+      try {
+        await neynar.publishReaction({
+          signerUuid: config.SIGNER_UUID!,
+          reactionType: 'like',
+          target: data.hash
+        });
+        console.log('Successfully liked cast:', {
+          requestId,
+          timestamp,
+          hash: data.hash
+        });
+      } catch (error) {
+        console.error('Error liking cast:', {
+          requestId,
+          timestamp,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        // Continue with reply even if like fails
+      }
 
-      // Mark as processed
-      processedMentions.add(data.hash);
+      // Post the response with enhanced error handling
+      try {
+        const replyText = `@${data.author.username} ${response}`;
+        console.log('Posting reply:', {
+          requestId,
+          timestamp,
+          text: replyText,
+          parentHash: data.hash
+        });
 
-      // Clean up old mentions after 10 minutes
-      setTimeout(() => processedMentions.delete(data.hash), 10 * 60 * 1000);
+        const reply = await neynar.publishCast({
+          signerUuid: config.SIGNER_UUID!,
+          text: replyText,
+          parent: data.hash,
+          channelId: 'collectorscanyon'
+        });
 
-      console.log('Debug: Successfully processed mention:', {
-        requestId,
-        hash: data.hash,
-        response
-      });
+        // Mark as processed only after successful response
+        processedMentions.add(data.hash);
+        setTimeout(() => processedMentions.delete(data.hash), 10 * 60 * 1000);
 
-      res.status(200).json({ status: 'success' });
+        console.log('Successfully posted reply:', {
+          requestId,
+          timestamp,
+          replyHash: reply.cast.hash,
+          parentHash: data.hash,
+          text: replyText.substring(0, 50) + '...'
+        });
+
+        return res.status(200).json({ 
+          status: 'success',
+          hash: reply.cast.hash
+        });
+      } catch (error) {
+        console.error('Error posting reply:', {
+          requestId,
+          timestamp,
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : String(error),
+          parentHash: data.hash
+        });
+        throw error;
+      }
     } catch (error) {
-      console.error('Debug: Error processing mention:', {
+      console.error('Error generating or posting response:', {
         requestId,
+        timestamp,
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,
           stack: error.stack
-        } : error,
+        } : String(error),
         hash: data.hash
       });
-      throw error;
+      
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Internal server error',
+          message: process.env.NODE_ENV === 'development' ? 
+            error instanceof Error ? error.message : String(error) : 
+            undefined
+        });
+      }
     }
   } catch (error) {
-    console.error('Debug: Webhook error:', {
+    console.error('Webhook handler error:', {
       requestId,
+      timestamp,
       error: error instanceof Error ? {
         name: error.name,
         message: error.message,
         stack: error.stack
-      } : error
+      } : String(error)
     });
-    res.status(500).json({ error: 'Internal server error' });
+    
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: 'Internal server error',
+        message: process.env.NODE_ENV === 'development' ? 
+          error instanceof Error ? error.message : String(error) : 
+          undefined
+      });
+    }
   }
 });
 
