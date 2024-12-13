@@ -1,14 +1,35 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import express, { Request, Response, NextFunction } from 'express';
-import dotenv from 'dotenv';
-import cors from 'cors';
-import webhookRouter from './routes/webhook';
+import { config } from './config';
 
-// Load environment variables
-dotenv.config();
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-// Initialize Express app
-const app = express();
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    environment: config.NODE_ENV,
+    config: {
+      hasNeynarKey: !!config.NEYNAR_API_KEY,
+      hasOpenAIKey: !!config.OPENAI_API_KEY,
+      hasWebhookSecret: !!config.WEBHOOK_SECRET,
+      botConfig: {
+        username: config.BOT_USERNAME,
+        fid: config.BOT_FID
+      }
+    }
+  });
+}
 
 // Enhanced production security headers and monitoring
 if (process.env.NODE_ENV === 'production') {

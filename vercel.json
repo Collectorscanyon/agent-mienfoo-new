@@ -2,7 +2,7 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/index.ts", "use": "@vercel/node" }
+    { "src": "api/**/*.ts", "use": "@vercel/node" }
   ],
   "routes": [
     {
@@ -13,36 +13,30 @@
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
         "Access-Control-Max-Age": "86400",
+        "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "X-XSS-Protection": "1; mode=block",
-        "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
         "Referrer-Policy": "strict-origin-when-cross-origin"
       },
-      "dest": "/api/index.ts"
+      "dest": "/api/webhook"
     },
     {
       "src": "/api/health",
-      "methods": ["GET"],
+      "methods": ["GET", "OPTIONS"],
       "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
         "Cache-Control": "no-store",
         "Pragma": "no-cache"
       },
-      "dest": "/api/index.ts"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.ts"
+      "dest": "/api/health"
     }
   ],
   "env": {
     "NODE_ENV": "production"
   },
-  "regions": ["iad1"],
-  "github": {
-    "silent": true
-  }
+  "regions": ["iad1"]
 }
