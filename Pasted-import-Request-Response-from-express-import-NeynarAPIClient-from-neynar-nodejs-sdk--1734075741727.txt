@@ -1,0 +1,130 @@
+import { Request, Response } from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import OpenAI from 'openai';
+import crypto from 'crypto';
+
+// Initialize API clients
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY!);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Types for Farcaster webhook payload
+interface Author {
+  fid: string;
+  username: string;
+}
+
+interface MentionedProfile {
+  fid: string;
+  username: string;
+}
+
+interface CastData {
+  hash: string;
+  thread_hash?: string;
+  parent_hash?: string;
+  author: Author;
+  text: string;
+  mentioned_profiles?: MentionedProfile[];
+}
+
+interface WebhookPayload {
+  type: string;
+  data: CastData;
+}
+
+// Set to track processed mentions
+const processedMentions = new Set<string>();
+
+export async function handleWebhook(req: Request, res: Response) {
+  const requestId = crypto.randomBytes(4).toString('hex');
+
+  try {
+    console.log('Webhook received:', {
+      requestId,
+      timestamp: new Date().toISOString(),
+      body: req.body
+    });
+
+    const payload = req.body as WebhookPayload;
+
+    if (payload.type !== 'cast.created') {
+      return res.status(200).json({
+        status: 'ignored',
+        reason: 'not a cast event'
+      });
+    }
+
+    const { data } = payload;
+
+    // Check for duplicate mentions
+    if (processedMentions.has(data.hash)) {
+      console.log('Skipping duplicate mention:', {
+        requestId,
+        hash: data.hash
+      });
+      return res.status(200).json({
+        status: 'ignored',
+        reason: 'already processed'
+      });
+    }
+
+    // Check if bot is mentioned
+    const isBotMentioned = data.mentioned_profiles?.some(
+      profile => profile.username.toLowerCase() === 'mienfoo.eth'
+    );
+
+    if (!isBotMentioned) {
+      return res.status(200).json({
+        status: 'ignored',
+        reason: 'bot not mentioned'
+      });
+    }
+
+    // Generate response
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        {
+          role: "system",
+          content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
+Your responses should be concise (max 280 chars), friendly, and focus on collecting advice. 
+Always end your responses with /collectorscanyon`
+        },
+        { role: "user", content: data.text }
+      ],
+      max_tokens: 100,
+      temperature: 0.7
+    });
+
+    let response = completion.choices[0].message.content;
+    if (!response?.endsWith('/collectorscanyon')) {
+      response = `${response} /collectorscanyon`;
+    }
+
+    // Post response
+    await neynar.publishCast(
+      process.env.SIGNER_UUID!,
+      response,
+      { replyTo: data.hash }
+    );
+
+    // Mark as processed
+    processedMentions.add(data.hash);
+
+    console.log('Response posted:', {
+      requestId,
+      response,
+      parentHash: data.hash
+    });
+
+    return res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('Error processing webhook:', {
+      requestId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export default { handleWebhook };

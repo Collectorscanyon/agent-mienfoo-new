@@ -1,22 +1,22 @@
 
 {
   "version": 2,
+  "buildCommand": "node api/build.js",
   "functions": {
     "api/*.ts": {
+      "runtime": "edge",
       "memory": 1024,
       "maxDuration": 60
     }
   },
-  "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "X-Neynar-Signature, Content-Type" }
+        { "key": "Access-Control-Allow-Headers", "value": "X-Neynar-Signature, Content-Type" },
+        { "key": "Access-Control-Max-Age", "value": "86400" }
       ]
     }
   ],
@@ -27,5 +27,8 @@
   ],
   "env": {
     "NODE_ENV": "production"
+  },
+  "github": {
+    "silent": true
   }
 }

@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { readdirSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -9,7 +10,7 @@ async function bundle() {
     const commonConfig = {
       bundle: true,
       platform: 'node',
-      target: 'node20',
+      target: 'node18',
       format: 'esm',
       external: [
         '@vercel/node',
@@ -20,30 +21,28 @@ async function bundle() {
       minify: true,
       sourcemap: true,
       logLevel: 'info',
-      metafile: true,
       outbase: 'api',
       define: {
         'process.env.NODE_ENV': '"production"'
       }
     };
 
-    const entryPoints = [
-      'index.ts',
-      'webhook.ts',
-      'health.ts',
-      'config.ts'
-    ].map(file => resolve(__dirname, file));
+    // Get all TypeScript files in the api directory
+    const entryPoints = readdirSync(__dirname)
+      .filter(file => file.endsWith('.ts'))
+      .map(file => resolve(__dirname, file));
 
-    console.log('Building API functions with configuration:', {
-      entryPoints,
+    console.log('Building Vercel serverless functions:', {
+      entryPoints: entryPoints.map(ep => ep.replace(__dirname, '')),
       target: commonConfig.target,
       format: commonConfig.format
     });
 
     for (const entry of entryPoints) {
-      const outfile = resolve(__dirname, 'dist', entry.replace(__dirname, '').replace('.ts', '.js'));
+      const filename = entry.split('/').pop();
+      const outfile = resolve(__dirname, '.vercel/output/functions', filename!.replace('.ts', '.func'));
       
-      console.log(`Building ${entry} -> ${outfile}`);
+      console.log(`Building ${filename} -> ${outfile}`);
       
       await build({
         ...commonConfig,
@@ -53,6 +52,7 @@ async function bundle() {
           {
             name: 'externalize-deps',
             setup(build) {
+              // Externalize all non-relative imports
               build.onResolve({ filter: /^[^./]|^\.[^./]|^\.\.[^/]/ }, args => ({
                 external: true
               }));
@@ -60,6 +60,18 @@ async function bundle() {
           },
         ],
       });
+
+      // Create Vercel function configuration
+      const config = {
+        runtime: 'edge',
+        entrypoint: filename!.replace('.ts', '.func'),
+        memory: 1024,
+        maxDuration: 60
+      };
+
+      // Write function configuration
+      const configPath = resolve(__dirname, '.vercel/output/functions', filename!.replace('.ts', '.func.json'));
+      await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2));
     }
 
     console.log('Build completed successfully');

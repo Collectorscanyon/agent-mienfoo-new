@@ -20,49 +20,108 @@ export function registerRoutes(app: Express): Server {
     res.json({ message: 'Bot is alive! 🤖' });
   });
 
-  // Webhook endpoint for Neynar
+  // Webhook endpoint for Neynar with enhanced logging
   app.post('/api/webhook', async (req, res) => {
+    const requestId = crypto.randomBytes(4).toString('hex');
+    const timestamp = new Date().toISOString();
+
     try {
-      const rawBody = JSON.stringify(req.body);
-      console.log('Received webhook:', {
-        type: req.body.type,
-        text: req.body.cast?.text,
-        author: req.body.cast?.author?.username
+      console.log('Webhook request received:', {
+        requestId,
+        timestamp,
+        method: req.method,
+        headers: {
+          'content-type': req.headers['content-type'],
+          'x-neynar-signature': req.headers['x-neynar-signature'] ? 
+            `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing',
+        },
+        body: req.body
       });
 
-      // Verify webhook signature
-      const signature = req.headers['x-neynar-signature'] as string;
-      if (!signature || !verifySignature(signature, rawBody)) {
-        console.log('Invalid webhook signature');
-        return res.status(401).json({ error: 'Invalid signature' });
+      // Check request body
+      if (!req.body || typeof req.body !== 'object') {
+        console.error('Invalid request body:', {
+          requestId,
+          timestamp,
+          body: req.body
+        });
+        return res.status(400).json({ error: 'Invalid request body' });
+      }
+
+      // Verify webhook signature in production
+      if (process.env.NODE_ENV === 'production') {
+        const signature = req.headers['x-neynar-signature'] as string;
+        const rawBody = JSON.stringify(req.body);
+        if (!signature || !verifySignature(signature, rawBody)) {
+          console.warn('Invalid webhook signature:', {
+            requestId,
+            timestamp,
+            signature: signature ? `${signature.substring(0, 10)}...` : 'missing'
+          });
+          return res.status(401).json({ error: 'Invalid signature' });
+        }
       }
       
       const { type, cast } = req.body;
       
-      // Enhanced mention detection
+      // Enhanced mention detection with detailed logging
       const isMentioned = cast?.mentions?.some((m: any) => m.fid === config.BOT_FID) || 
                          cast?.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
       
       console.log('Cast analysis:', {
+        requestId,
+        timestamp,
         type,
         text: cast?.text,
         hasMentions: !!cast?.mentions?.length,
         isBotMentioned: isMentioned,
         botFid: config.BOT_FID,
-        botUsername: config.BOT_USERNAME
+        botUsername: config.BOT_USERNAME,
+        mentions: cast?.mentions
       });
 
       if (isMentioned) {
-        console.log('Bot mention detected, processing cast:', cast);
+        console.log('Bot mention detected, processing cast:', {
+          requestId,
+          timestamp,
+          cast: {
+            hash: cast.hash,
+            text: cast.text,
+            author: cast.author
+          }
+        });
         await handleMention(cast);
       } else {
-        console.log('Skipping cast - no bot mention detected');
+        console.log('Skipping cast - no bot mention detected:', {
+          requestId,
+          timestamp
+        });
       }
 
+      console.log('Webhook processed successfully:', {
+        requestId,
+        timestamp
+      });
       res.status(200).json({ status: 'success' });
     } catch (error) {
-      console.error('Webhook error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      console.error('Webhook handler error:', {
+        requestId,
+        timestamp,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : String(error)
+      });
+      
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Internal server error',
+          message: process.env.NODE_ENV === 'development' ? 
+            error instanceof Error ? error.message : String(error) : 
+            undefined
+        });
+      }
     }
   });
 

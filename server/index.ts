@@ -38,6 +38,21 @@ app.use(express.json({
 
 app.use(cors());
 
+// CORS configuration
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-neynar-signature']
+}));
+
+// Body parsing middleware with raw body access for signature verification
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  },
+  limit: '50kb'
+}));
+
 // Import debug logging middleware
 import { debugLogging } from './middleware/debugLogging';
 import webhookRouter from './routes/webhook';
