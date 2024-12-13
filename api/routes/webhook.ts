@@ -2,8 +2,33 @@
 import express, { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { handleWebhook } from '../bot/handlers';
+import { timingSafeEqual } from 'crypto';
 
 const router = Router();
+
+// Request size limit for production
+const requestSizeLimit = express.json({
+  limit: '50kb'
+});
+
+// Production-ready signature verification
+function verifySignature(payload: string, signature: string, secret: string): boolean {
+  try {
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(payload)
+      .digest('hex');
+
+    // Use timing-safe comparison
+    return timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature)
+    );
+  } catch (error) {
+    console.error('Signature verification error:', error);
+    return false;
+  }
+}
 
 // Production error handler
 const errorHandler = (error: Error, req: Request, res: Response) => {
@@ -30,7 +55,7 @@ const errorHandler = (error: Error, req: Request, res: Response) => {
   }
 };
 
-router.post('/', express.json(), async (req: Request, res: Response) => {
+router.post('/', requestSizeLimit, async (req: Request, res: Response) => {
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);
 
@@ -54,18 +79,44 @@ router.post('/', express.json(), async (req: Request, res: Response) => {
   });
 
   try {
-    // Verify signature
+    // Enhanced signature verification for production
     if (!process.env.WEBHOOK_SECRET) {
-      throw new Error('Missing WEBHOOK_SECRET');
+      console.error('Configuration error: Missing WEBHOOK_SECRET');
+      return res.status(500).json({ 
+        error: 'Server configuration error',
+        code: 'MISSING_CONFIG'
+      });
     }
 
     const signature = req.headers['x-neynar-signature'] as string;
     if (!signature) {
-      return res.status(401).json({ error: 'Missing signature' });
+      console.warn('Authentication error: Missing signature header');
+      return res.status(401).json({ 
+        error: 'Missing signature header',
+        code: 'MISSING_SIGNATURE'
+      });
+    }
+
+    // Verify signature with timing-safe comparison
+    const isValid = verifySignature(
+      JSON.stringify(req.body),
+      signature,
+      process.env.WEBHOOK_SECRET
+    );
+
+    if (!isValid) {
+      console.warn('Authentication error: Invalid signature');
+      return res.status(401).json({ 
+        error: 'Invalid signature',
+        code: 'INVALID_SIGNATURE'
+      });
     }
 
     // Send immediate acknowledgment
-    res.status(202).json({ status: 'accepted' });
+    res.status(202).json({ 
+      status: 'accepted',
+      timestamp: new Date().toISOString()
+    });
 
     // Process webhook asynchronously
     setImmediate(async () => {
