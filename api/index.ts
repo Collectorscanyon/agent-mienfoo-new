@@ -143,31 +143,43 @@ if (process.env.NODE_ENV === 'production') {
   }));
 }
 
-// Register webhook routes with enhanced logging
-console.log('Registering webhook routes...');
+// Register webhook route with enhanced logging
+console.log('Registering webhook route...');
 
-// Handle both /api/webhook and /webhook paths
-const webhookPaths = ['/api/webhook', '/webhook'];
-webhookPaths.forEach(path => {
-  app.use(path, webhookRouter);
-  console.log(`Webhook route registered at ${path}`, {
+// Handle webhook at /api/webhook only
+app.use('/api/webhook', webhookRouter);
+console.log('Webhook route registered at /api/webhook', {
+  timestamp: new Date().toISOString(),
+  environment: process.env.NODE_ENV || 'development'
+});
+
+// Add explicit POST handler for detailed logging
+app.post('/api/webhook', (req: Request, res: Response, next: NextFunction) => {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log('Webhook POST request received:', {
+    requestId,
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    headers: {
+      'content-type': req.headers['content-type'],
+      'x-neynar-signature': req.headers['x-neynar-signature'] ? 
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing',
+      'user-agent': req.headers['user-agent']
+    },
+    body: req.body ? {
+      type: req.body.type,
+      data: req.body.data ? {
+        hash: req.body.data.hash,
+        text: req.body.data.text,
+        author: req.body.data.author ? {
+          username: req.body.data.author.username,
+          fid: req.body.data.author.fid
+        } : null
+      } : null
+    } : 'empty',
+    rawBody: process.env.NODE_ENV === 'development' ? 
+      JSON.stringify(req.body, null, 2) : undefined
   });
-
-  // Add explicit POST handler for more detailed logging
-  app.post(path, (req: Request, res: Response, next: NextFunction) => {
-    console.log(`Webhook POST request received at ${path}:`, {
-      timestamp: new Date().toISOString(),
-      headers: {
-        'content-type': req.headers['content-type'],
-        'x-neynar-signature': req.headers['x-neynar-signature'] ? 
-          `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
-      },
-      body: req.body ? JSON.stringify(req.body).substring(0, 200) + '...' : 'empty'
-    });
-    next();
-  });
+  next();
 });
 
 // Global error handler

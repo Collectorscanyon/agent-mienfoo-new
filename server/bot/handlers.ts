@@ -103,9 +103,7 @@ function shouldProcessThread(cast: any): boolean {
   if (!processedThreads.has(threadHash)) {
     processedThreads.set(threadHash, {
       lastResponseTime: currentTime,
-      responses: new Set([cast.hash]),
-      initialAuthor: cast.author?.username,
-      parentHash: cast.parent_hash
+      responses: new Set([cast.hash])
     });
     console.log('New thread initialized:', { castKey, threadHash });
     return true;
@@ -252,10 +250,26 @@ export async function handleWebhook(event: any) {
     // Check for bot mentions
     // Enhanced mention detection with detailed logging
     const mentionTypes = {
-      directMention: cast.mentioned_profiles?.some((m: any) => m.fid?.toString() === config.BOT_FID),
+      directMention: cast.mentioned_profiles?.some((m: any) => 
+        m.fid?.toString() === config.BOT_FID || 
+        m.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase()
+      ),
       textMention: cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`),
-      ethMention: cast.text?.toLowerCase().includes('@mienfoo.eth')
+      ethMention: cast.text?.toLowerCase().includes('@mienfoo.eth'),
+      channelMention: cast.text?.toLowerCase().includes('/collectorscanyon')
     };
+
+    console.log('Mention detection analysis:', {
+      timestamp: new Date().toISOString(),
+      castHash: cast.hash,
+      mentionTypes,
+      text: cast.text,
+      mentionedProfiles: cast.mentioned_profiles,
+      botConfig: {
+        username: config.BOT_USERNAME,
+        fid: config.BOT_FID
+      }
+    });
 
     console.log('Mention detection details:', {
       timestamp: new Date().toISOString(),

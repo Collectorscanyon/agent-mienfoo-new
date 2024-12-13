@@ -14,37 +14,62 @@ const requestSizeLimit = express.json({
 // Production-ready signature verification
 function verifySignature(payload: string, signature: string, secret: string): boolean {
   try {
-    // Sort the payload object keys for consistent ordering
-    const sortedPayload = JSON.stringify(JSON.parse(payload), Object.keys(JSON.parse(payload)).sort());
+    // Ensure consistent payload formatting
+    const payloadObj = JSON.parse(payload);
+    const sortedPayload = JSON.stringify(payloadObj, Object.keys(payloadObj).sort());
+    
+    // Calculate expected signature
     const expectedSignature = crypto
       .createHmac('sha256', secret)
       .update(sortedPayload)
       .digest('hex');
 
-    console.log('Signature verification:', {
+    // Enhanced signature verification logging
+    console.log('Signature verification details:', {
       timestamp: new Date().toISOString(),
-      received: signature.substring(0, 10) + '...',
-      expected: expectedSignature.substring(0, 10) + '...',
-      payloadLength: sortedPayload.length,
-      isDevelopment: process.env.NODE_ENV !== 'production'
+      received: {
+        signature: signature.substring(0, 10) + '...',
+        length: signature.length
+      },
+      expected: {
+        signature: expectedSignature.substring(0, 10) + '...',
+        length: expectedSignature.length
+      },
+      payload: {
+        length: sortedPayload.length,
+        type: payloadObj.type,
+        hasData: !!payloadObj.data
+      },
+      environment: process.env.NODE_ENV || 'development'
     });
 
-    // In development mode, be more lenient with signature verification
+    // In development, log more details and be lenient
     if (process.env.NODE_ENV !== 'production') {
+      console.log('Development mode signature check:', {
+        matches: signature === expectedSignature,
+        fullPayload: sortedPayload
+      });
       return true;
     }
 
-    // Use timing-safe comparison for production
-    return timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    // Production: Use timing-safe comparison
+    try {
+      return timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+      );
+    } catch (compareError) {
+      console.error('Signature comparison error:', {
+        error: compareError instanceof Error ? compareError.message : String(compareError),
+        timestamp: new Date().toISOString()
+      });
+      return false;
+    }
   } catch (error) {
     console.error('Signature verification error:', {
       error: error instanceof Error ? error.message : String(error),
       timestamp: new Date().toISOString()
     });
-    // Allow requests in development mode even if signature verification fails
     return process.env.NODE_ENV !== 'production';
   }
 }
