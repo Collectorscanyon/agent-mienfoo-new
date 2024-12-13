@@ -12,25 +12,29 @@ const processedMentions = new Set<string>();
 // Verify Neynar webhook signature
 function verifySignature(req: Request): boolean {
   const signature = req.headers['x-neynar-signature'];
-  if (!signature || !config.WEBHOOK_SECRET) return false;
+  if (!signature || !config.WEBHOOK_SECRET) {
+    logger.error('Missing signature or webhook secret');
+    return false;
+  }
 
   try {
     const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
     const digest = hmac.update(req.rawBody).digest('hex');
-    const signatureHash = (signature as string).replace('sha256=', '');
+    const expectedSignature = `sha256=${digest}`;
     
     logger.info('Signature verification:', {
       timestamp: new Date().toISOString(),
-      received: signatureHash.substring(0, 10) + '...',
-      computed: digest.substring(0, 10) + '...'
+      receivedSignature: (signature as string).substring(0, 15) + '...',
+      expectedSignature: expectedSignature.substring(0, 15) + '...',
+      matches: expectedSignature === signature
     });
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signatureHash),
-      Buffer.from(digest)
-    );
+    return expectedSignature === signature;
   } catch (error) {
-    logger.error('Signature verification error:', error);
+    logger.error('Signature verification error:', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return false;
   }
 }
@@ -64,12 +68,23 @@ router.post('/', express.json({
 
     logger.info('Processing webhook:', {
       requestId,
+      timestamp: new Date().toISOString(),
       type,
       data: {
         hash: data?.hash,
         text: data?.text,
-        author: data?.author?.username,
-        mentioned_profiles: data?.mentioned_profiles
+        author: {
+          fid: data?.author?.fid,
+          username: data?.author?.username,
+          display_name: data?.author?.display_name
+        },
+        mentioned_profiles: data?.mentioned_profiles?.map((p: any) => ({
+          fid: p.fid,
+          username: p.username
+        })),
+        parent_hash: data?.parent_hash,
+        parent_url: data?.parent_url,
+        timestamp: data?.timestamp
       }
     });
 
