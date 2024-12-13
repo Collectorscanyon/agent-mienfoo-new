@@ -37,38 +37,67 @@ setInterval(() => {
 
 // Helper function to generate bot response
 async function generateBotResponse(text: string): Promise<string> {
-  try {
-    console.log('Generating response for:', text);
-    
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        {
-          role: "system",
-          content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
+  const maxRetries = 3;
+  let lastError;
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      logger.info('Generating response:', {
+        attempt: i + 1,
+        text,
+        timestamp: new Date().toISOString()
+      });
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [
+          {
+            role: "system",
+            content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
 Keep responses concise (max 280 chars), friendly, and focused on collecting advice. 
 Always include /collectorscanyon in your responses.`
-        },
-        { role: "user", content: text }
-      ],
-      max_tokens: 100,
-      temperature: 0.7
-    });
+          },
+          { role: "user", content: text }
+        ],
+        max_tokens: 100,
+        temperature: 0.7
+      });
 
-    let response = completion.choices[0]?.message?.content || 
-      "I'm processing your request. Please try again shortly. /collectorscanyon";
-    
-    // Ensure response ends with /collectorscanyon
-    if (!response.includes('/collectorscanyon')) {
-      response += ' /collectorscanyon';
+      let response = completion.choices[0]?.message?.content;
+      
+      if (!response) {
+        throw new Error('Empty response from OpenAI');
+      }
+
+      // Ensure response ends with /collectorscanyon
+      if (!response.includes('/collectorscanyon')) {
+        response += ' /collectorscanyon';
+      }
+      
+      logger.info('Generated response:', {
+        text: response,
+        timestamp: new Date().toISOString()
+      });
+      return response;
+
+    } catch (error) {
+      lastError = error;
+      logger.error('Error generating response:', {
+        attempt: i + 1,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : String(error)
+      });
+      
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      }
     }
-    
-    console.log('Generated response:', response);
-    return response;
-  } catch (error) {
-    console.error('Error generating response:', error);
-    return "I'm having trouble processing your request right now. Please try again later. /collectorscanyon";
   }
+
+  return "I'm having trouble processing your request right now. Please try again later. /collectorscanyon";
 }
 
 // Post response to Farcaster with enhanced retry logic
@@ -160,9 +189,20 @@ export async function handleWebhook(event: any) {
     const { type, data: cast } = event.body;
     
     if (type !== 'cast.created') {
-      console.log('Ignoring non-cast event:', {
+      logger.info('Ignoring non-cast event:', {
         requestId,
-        type
+        timestamp: new Date().toISOString(),
+        type,
+        body: JSON.stringify(event.body).substring(0, 200)
+      });
+      return;
+    }
+
+    if (!event.body?.data?.text || !event.body?.data?.hash) {
+      logger.error('Invalid cast data structure:', {
+        requestId,
+        timestamp: new Date().toISOString(),
+        data: JSON.stringify(event.body?.data)
       });
       return;
     }
@@ -180,9 +220,23 @@ export async function handleWebhook(event: any) {
     }
 
     // Check for bot mention
-    const isBotMentioned = cast.text?.toLowerCase().includes('@mienfoo.eth') ||
-      cast.mentioned_profiles?.some((profile: any) => 
-        profile.username?.toLowerCase() === process.env.BOT_USERNAME?.toLowerCase());
+    const botUsername = process.env.BOT_USERNAME?.toLowerCase();
+    const isBotMentioned = (
+      (cast.text?.toLowerCase().includes(`@${botUsername}`)) ||
+      (Array.isArray(cast.mentioned_profiles) && 
+       cast.mentioned_profiles.some((profile: any) => 
+         profile.username?.toLowerCase() === botUsername))
+    );
+
+    logger.info('Mention check:', {
+      requestId,
+      timestamp: new Date().toISOString(),
+      castHash: cast.hash,
+      text: cast.text,
+      isBotMentioned,
+      botUsername,
+      mentionedProfiles: cast.mentioned_profiles
+    });
 
     console.log('Mention check:', {
       requestId,
