@@ -38,9 +38,13 @@ app.use(cors());
 
 // Import debug logging middleware
 import { debugLogging } from './middleware/debugLogging';
+import webhookRouter from './routes/webhook';
 
 // Add debug logging middleware
 app.use(debugLogging);
+
+// Mount webhook router
+app.use('/api/webhook', webhookRouter);
 
 // Verify Neynar webhook signature
 function verifySignature(req: express.Request): boolean {
