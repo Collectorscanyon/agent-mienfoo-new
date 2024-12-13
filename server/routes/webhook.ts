@@ -53,6 +53,22 @@ router.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Verify webhook signature
+function verifySignature(signature: string | undefined, body: string): boolean {
+  if (!signature || !config.WEBHOOK_SECRET) {
+    return false;
+  }
+
+  try {
+    const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
+    const calculatedSignature = hmac.update(body).digest('hex');
+    return signature === calculatedSignature;
+  } catch (error) {
+    console.error('Debug: Signature verification error:', error);
+    return false;
+  }
+}
+
 // Main webhook endpoint
 router.post('/', express.json({
   verify: (req: any, res, buf) => {
@@ -104,7 +120,9 @@ router.post('/', express.json({
 
     // Check for bot mention with enhanced logging
     const isBotMentioned = data.mentioned_profiles?.some(
-      (profile: any) => profile.username.toLowerCase() === (config.BOT_USERNAME || 'mienfoo.eth').toLowerCase()
+      (profile: any) => 
+        profile.username.toLowerCase() === 'mienfoo.eth' ||
+        profile.fid === '834885'
     );
 
     console.log('Debug: Bot mention check:', {
@@ -191,21 +209,5 @@ Always end your responses with /collectorscanyon`
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// Verify webhook signature
-function verifySignature(signature: string | undefined, body: string): boolean {
-  if (!signature || !config.WEBHOOK_SECRET) {
-    return false;
-  }
-
-  try {
-    const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
-    const calculatedSignature = hmac.update(body).digest('hex');
-    return signature === calculatedSignature;
-  } catch (error) {
-    console.error('Debug: Signature verification error:', error);
-    return false;
-  }
-}
 
 export default router;
