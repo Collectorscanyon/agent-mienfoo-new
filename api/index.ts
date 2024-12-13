@@ -75,6 +75,7 @@ app.post('/webhook', async (req: Request, res: Response) => {
 
   try {
     if (type === 'cast.created' && data.text) {
+      const startTime = Date.now();
       console.log('Processing cast:', {
         requestId,
         timestamp,
@@ -82,13 +83,14 @@ app.post('/webhook', async (req: Request, res: Response) => {
         hash: data.hash,
         author: data.author?.username,
         isMention: data.text.toLowerCase().includes('@mienfoo.eth'),
-        hasThreadHash: !!data.thread_hash
+        hasThreadHash: !!data.thread_hash,
+        hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+        processingStart: new Date().toISOString()
       });
 
       // Import and use handler for cast processing
       const { handleWebhook } = await import('./bot/handlers');
       
-      const startTime = Date.now();
       await handleWebhook({
         type: 'cast.created',
         data: {

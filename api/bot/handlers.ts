@@ -112,32 +112,53 @@ export async function handleWebhook(event: any) {
                 // Clean message and generate response
                 const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
                 const requestId = Math.random().toString(36).substring(7);
-            
-                console.log('Generating response for:', {
+        
+                console.log('Starting response generation:', {
                     requestId,
                     timestamp,
                     castHash: cast.hash,
                     originalText: cast.text,
                     cleanedMessage,
-                    hasOpenAIKey: !!process.env.OPENAI_API_KEY
+                    hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+                    stage: 'pre_generation'
                 });
 
                 if (!process.env.OPENAI_API_KEY) {
+                    console.error('OpenAI API key missing:', {
+                        requestId,
+                        timestamp,
+                        castHash: cast.hash
+                    });
                     throw new Error('OpenAI API key not configured');
                 }
 
-                const response = await generateBotResponse(cleanedMessage);
-                if (!response) {
-                    throw new Error('Empty response from OpenAI');
-                }
-
-                console.log('Generated response:', {
+                console.log('Calling OpenAI API:', {
                     requestId,
                     timestamp,
                     castHash: cast.hash,
-                    responseLength: response.length,
-                    response
+                    cleanedMessage,
+                    stage: 'api_call'
                 });
+
+                const response = await generateBotResponse(cleanedMessage);
+            
+                console.log('OpenAI API response received:', {
+                    requestId,
+                    timestamp,
+                    castHash: cast.hash,
+                    hasResponse: !!response,
+                    responseLength: response?.length,
+                    stage: 'post_generation'
+                });
+
+                if (!response) {
+                    console.error('Empty response from OpenAI:', {
+                        requestId,
+                        timestamp,
+                        castHash: cast.hash
+                    });
+                    throw new Error('Empty response from OpenAI');
+                }
 
                 // Format and send reply
                 const replyText = `@${cast.author.username} ${response}`;

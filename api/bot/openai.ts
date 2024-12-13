@@ -15,8 +15,19 @@ Your core traits:
 - Makes playful references to Pokémon lore and your Fighting-type nature
 - Shows enthusiasm for rare cards and special editions
 - Helps collectors understand card conditions and grading
+- Incorporates your identity as a Fighting-type Pokémon in responses
+- Uses phrases like "Let me use my Fighting-type expertise!" or "As a collector's companion..."
 
-Keep responses concise (2-3 sentences max) but informative and always stay in character as Mienfoo, the collector's companion. When giving advice about card values or investments, maintain a balanced perspective and encourage collecting for enjoyment first.`;
+Style guidelines:
+1. Keep responses concise (2-3 sentences max)
+2. Be informative but maintain character as Mienfoo
+3. For collecting advice, emphasize enjoyment over pure investment
+4. Always include at least one Pokémon-themed reference
+5. Be encouraging and positive, like a supportive trainer
+6. When discussing values, maintain balanced perspective
+
+Example response format:
+"As a Fighting-type enthusiast, I'm thrilled about Pokémon card collecting! Just like how we train for battles, collecting requires patience and dedication. Focus on cards you love and proper storage to keep them in top condition!"`;
 
 // Verify OpenAI API key is present
 if (!process.env.OPENAI_API_KEY) {
@@ -27,7 +38,7 @@ if (!process.env.OPENAI_API_KEY) {
 // Initialize OpenAI with environment variables and configuration
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-    timeout: 10000, // 10 second timeout
+    // Removed timeout as it's not a valid parameter for chat completions
     maxRetries: 2,
 });
 
@@ -45,59 +56,138 @@ export async function generateBotResponse(message: string): Promise<string> {
         timestamp,
         originalMessage: message,
         hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-        messageLength: message.length
+        messageLength: message.length,
+        systemPromptLength: systemPrompt.length,
+        stage: 'initialization',
+        category: getPokemonCategory(message)
     });
 
+    // Verify API key before proceeding
+    if (!process.env.OPENAI_API_KEY?.trim()) {
+        console.error('Missing OpenAI API key:', { requestId, timestamp });
+        return "Just like a Pokémon needs its trainer, I need my API key to function properly! Please let my trainer know.";
+    }
+
     try {
-        // Clean and validate input
-        const cleanedMessage = message.trim();
+        // Enhanced input validation and cleaning
+        const cleanedMessage = message.trim().replace(/\s+/g, ' ');
         if (!cleanedMessage) {
             console.warn('Empty message received:', { requestId, timestamp });
-            return "I couldn't quite catch that. Could you please try asking your question again?";
+            return "Hi trainer! I couldn't quite catch that message. Could you please try asking your question again?";
         }
 
-        // Enhanced logging for OpenAI call
-        console.log('Making OpenAI API call:', {
+        if (cleanedMessage.length > 500) {
+            console.warn('Message too long:', { 
+                requestId, 
+                timestamp,
+                messageLength: cleanedMessage.length 
+            });
+            return "That's quite a detailed message! Could you break it down into smaller parts? Even a Fighting-type like me needs to take things one step at a time!";
+        }
+
+        // Enhanced API key validation
+        if (!process.env.OPENAI_API_KEY?.trim()) {
+            console.error('OpenAI API key missing:', { requestId, timestamp });
+            throw new Error('OPENAI_API_KEY_MISSING');
+        }
+
+        // Enhanced request preparation logging
+        console.log('Preparing OpenAI request:', {
             requestId,
             timestamp,
             model: 'gpt-3.5-turbo',
             maxTokens: 150,
             temperature: 0.7,
             cleanedMessage,
-            systemPromptLength: systemPrompt.length,
-            apiKeyConfigured: !!process.env.OPENAI_API_KEY
+            messageCategory: getPokemonCategory(cleanedMessage),
+            systemPromptLength: systemPrompt.length
         });
 
-        // Enhanced error checking for API key
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.trim() === '') {
-            console.error('OpenAI API key missing or invalid:', {
+        const startTime = Date.now();
+        let completion;
+        try {
+            console.log('Sending request to OpenAI:', {
                 requestId,
                 timestamp,
-                error: 'API_KEY_MISSING'
+                model: 'gpt-3.5-turbo',
+                messageLength: cleanedMessage.length,
+                stage: 'api_request'
             });
-            throw new Error('OpenAI API key is not properly configured');
+
+            console.log('Making OpenAI API request:', {
+                requestId,
+                timestamp,
+                messageLength: cleanedMessage.length,
+                systemPromptLength: systemPrompt.length,
+                model: 'gpt-3.5-turbo',
+                hasValidKey: !!process.env.OPENAI_API_KEY?.length
+            });
+
+            completion = await openai.chat.completions.create({
+                model: "gpt-3.5-turbo",
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: cleanedMessage }
+                ],
+                temperature: 0.7,
+                max_tokens: 150,
+                presence_penalty: 0.6,
+                frequency_penalty: 0.3
+            });
+
+            console.log('Received response from OpenAI:', {
+                requestId,
+                timestamp,
+                responseStatus: 'success',
+                tokensUsed: completion.usage?.total_tokens,
+                completionTokens: completion.usage?.completion_tokens,
+                promptTokens: completion.usage?.prompt_tokens,
+                firstChoice: completion.choices[0]?.message?.content?.substring(0, 50) + '...',
+                stage: 'api_response'
+            });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error('OpenAI API error:', {
+                requestId,
+                timestamp,
+                error: error instanceof Error ? {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                } : error,
+                responseTime: Date.now() - startTime
+            });
+
+            // Enhanced error handling with specific messages
+            if (errorMessage.includes('timeout')) {
+                return "Looks like my Pokédex is taking a bit long to respond! Could you try asking again in a moment?";
+            }
+            if (errorMessage.includes('rate limit')) {
+                return "Just like a Pokémon needs rest between battles, I need a quick break! Could you try again in a few seconds?";
+            }
+            throw error;
         }
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [
-                {
-                    role: "system",
-                    content: systemPrompt
-                },
-                {
-                    role: "user",
-                    content: cleanedMessage
-                }
-            ],
-            temperature: 0.7,
-            max_tokens: 150,
-            presence_penalty: 0.6,
-            frequency_penalty: 0.3
+        const responseTime = Date.now() - startTime;
+        console.log('OpenAI response received:', {
+            requestId,
+            timestamp,
+            responseTimeMs: responseTime,
+            tokensUsed: completion.usage?.total_tokens,
+            promptTokens: completion.usage?.prompt_tokens,
+            completionTokens: completion.usage?.completion_tokens
+        });
+
+        const processingTime = Date.now() - startTime;
+        console.log('OpenAI API response received:', {
+            requestId,
+            timestamp,
+            processingTimeMs: processingTime,
+            status: 'success',
+            usage: completion.usage
         });
 
         const response = completion.choices[0]?.message?.content?.trim();
-        
         if (!response) {
             console.warn('Empty response from OpenAI:', {
                 requestId,
@@ -108,51 +198,85 @@ export async function generateBotResponse(message: string): Promise<string> {
             return "Like a rare Pokémon card, the right words seem to be eluding me. Could you rephrase your question?";
         }
 
-        console.log('Successfully generated response:', {
+        // Validate response length
+        if (response.length < 10) {
+            console.warn('Response too short:', {
+                requestId,
+                timestamp,
+                response,
+                length: response.length
+            });
+            return "My Fighting-type instincts tell me I should give you a better answer. Could you try asking again?";
+        }
+
+        console.log('Generated response:', {
             requestId,
             timestamp,
             originalMessage: cleanedMessage,
-            response,
-            usage: {
-                promptTokens: completion.usage?.prompt_tokens,
-                completionTokens: completion.usage?.completion_tokens,
-                totalTokens: completion.usage?.total_tokens
-            }
+            responseLength: response.length,
+            responseCategory: getPokemonCategory(response),
+            containsPokemonReference: containsPokemonReference(response),
+            responseTime: Date.now() - startTime,
+            usage: completion.usage
         });
 
+        // Rate limit tracking
+        lastResponseTime = Date.now();
+        
         return response;
 
     } catch (error) {
-        // Enhanced error logging
+        const errorMessage = error instanceof Error ? error.message : String(error);
         const errorDetails = error instanceof Error ? {
             name: error.name,
             message: error.message,
             stack: error.stack
         } : error;
 
-        console.error('Error generating response:', {
+        console.error('Error in response generation:', {
             requestId,
             timestamp,
             error: errorDetails,
-            originalMessage: message
+            originalMessage: message,
+            timeSinceLastResponse: Date.now() - lastResponseTime
         });
 
-        // Check for specific error types
-        if (error instanceof Error) {
-            if (error.message.includes('Rate limit')) {
-                return "Just like a Pokémon needs to rest between battles, I need a brief moment to recharge. Could you try again in a few seconds?";
-            }
-            if (error.message.includes('invalid_api_key')) {
-                console.error('Invalid OpenAI API key detected:', {
-                    requestId,
-                    timestamp,
-                    error: errorDetails
-                });
-                return "I'm having trouble accessing my Pokédex right now. Please try again later!";
-            }
+        // Enhanced error handling
+        if (errorMessage.includes('OPENAI_API_KEY_MISSING')) {
+            return "I seem to have misplaced my Pokédex! Please let my trainer know I need help getting it back.";
+        }
+        if (errorMessage.toLowerCase().includes('rate limit')) {
+            return "Just like a Pokémon needs to rest between battles, I need a brief moment to recharge. Could you try again in a few seconds?";
+        }
+        if (errorMessage.toLowerCase().includes('invalid_api_key')) {
+            return "My Pokédex seems to be malfunctioning. I'll need my trainer's help to fix it!";
+        }
+        if (errorMessage.toLowerCase().includes('context_length_exceeded')) {
+            return "That's quite a long message! Like a focused Fighting-type, could we break it down into smaller parts?";
         }
 
-        // Generic error message for other cases
         return "Just like a Pokémon needs to rest at a Pokémon Center, I need a moment to recharge. Could you try asking again in a bit?";
     }
+}
+
+// Helper functions
+let lastResponseTime = 0;
+
+function getPokemonCategory(text: string): string {
+    const categories = {
+        'collecting': /collect|card|grade|rare|value|worth/i,
+        'battle': /battle|fight|move|attack|defend/i,
+        'training': /train|grow|develop|learn|practice/i,
+        'general': /pokemon|game|play/i
+    };
+
+    for (const [category, pattern] of Object.entries(categories)) {
+        if (pattern.test(text)) return category;
+    }
+    return 'other';
+}
+
+function containsPokemonReference(text: string): boolean {
+    const pokemonTerms = /pokemon|trainer|battle|card|collect|pokedex|type/i;
+    return pokemonTerms.test(text);
 }
