@@ -211,89 +211,14 @@ export async function handleWebhook(event: any) {
                 });
             }
 
-            try {
-                // Clean message and generate response
-                const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
-                
-
-                console.log('Starting response generation:', {
-                    requestId,
-                    timestamp,
-                    castHash: cast.hash,
-                    originalText: cast.text,
-                    cleanedMessage,
-                    hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-                    stage: 'pre_generation'
-                });
-
-                if (!process.env.OPENAI_API_KEY) {
-                    console.error('OpenAI API key missing:', {
-                        requestId,
-                        timestamp,
-                        castHash: cast.hash
-                    });
-                    throw new Error('OpenAI API key not configured');
-                }
-
-                console.log('Calling OpenAI API:', {
-                    requestId,
-                    timestamp,
-                    castHash: cast.hash,
-                    cleanedMessage,
-                    stage: 'api_call'
-                });
-
-                const response = await generateBotResponse(cleanedMessage);
-            
-                console.log('OpenAI API response received:', {
-                    requestId,
-                    timestamp,
-                    castHash: cast.hash,
-                    hasResponse: !!response,
-                    responseLength: response?.length,
-                    response: response,
-                    stage: 'post_generation'
-                });
-
-                if (!response) {
-                    console.error('Empty response from OpenAI:', {
-                        requestId,
-                        timestamp,
-                        castHash: cast.hash
-                    });
-                    throw new Error('Empty response from OpenAI');
-                }
-
-                // Format and send reply
-                const replyText = `@${cast.author.username} ${response}`;
-                console.log('Sending reply:', {
-                    requestId,
-                    timestamp,
-                    castHash: cast.hash,
-                    replyText
-                });
-
-                await neynar.publishCast({
-                    signerUuid: process.env.SIGNER_UUID || '',
-                    text: replyText,
-                    parent: cast.hash,
-                    channelId: "collectorscanyon"
-                });
-
-                console.log('Reply sent successfully:', {
-                    requestId,
-                    timestamp,
-                    castHash: cast.hash,
-                    parentHash: cast.hash
-                });
-            } catch (error) {
-                console.error('Error in response generation or reply:', {
-                    requestId,
-                    timestamp,
-                    castHash: cast.hash,
-                    error: error instanceof Error ? error.message : error
-                });
-            }
+            // Additional logging for completion
+            console.log('Webhook processing completed:', {
+                requestId,
+                timestamp,
+                castHash: cast.hash,
+                author: cast.author?.username,
+                hasResponse: true
+            });
         }
     } catch (error) {
         console.error('Error in webhook handler:', {
