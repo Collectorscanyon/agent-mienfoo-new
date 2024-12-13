@@ -7,8 +7,9 @@ const router = Router();
 
 router.post('/', express.json(), async (req: Request, res: Response) => {
   const timestamp = new Date().toISOString();
-  const requestId = crypto.randomBytes(4).toString('hex');
+  const requestId = Math.random().toString(36).substring(7);
 
+  // Enhanced request logging with full details
   console.log('Webhook received:', {
     requestId,
     timestamp,
@@ -18,6 +19,13 @@ router.post('/', express.json(), async (req: Request, res: Response) => {
     mentions: req.body?.data?.mentioned_profiles,
     signature: req.headers['x-neynar-signature'] ? 
       `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
+  });
+
+  // Detailed debug logging
+  console.log('Full webhook payload:', {
+    requestId,
+    headers: req.headers,
+    body: JSON.stringify(req.body, null, 2)
   });
 
   try {

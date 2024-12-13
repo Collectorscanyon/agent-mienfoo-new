@@ -30,19 +30,28 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
+// Enhanced request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
+  const requestId = Math.random().toString(36).substring(7);
   console.log('Incoming request:', {
+    requestId,
     timestamp: new Date().toISOString(),
     method: req.method,
     path: req.path,
+    query: req.query,
     headers: {
       'content-type': req.headers['content-type'],
       'x-neynar-signature': req.headers['x-neynar-signature'] ? 
-        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing',
+      'user-agent': req.headers['user-agent']
     },
-    body: req.body ? JSON.stringify(req.body).substring(0, 200) + '...' : 'empty'
+    body: req.method === 'POST' ? 
+      JSON.stringify(req.body).substring(0, 200) + '...' : 
+      'not a POST request'
   });
+
+  // Add requestId to response headers for tracking
+  res.setHeader('X-Request-ID', requestId);
   next();
 });
 
