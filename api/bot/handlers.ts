@@ -1,22 +1,17 @@
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
-
-// Verify required environment variables
-const requiredVars = ['NEYNAR_API_KEY', 'OPENAI_API_KEY', 'SIGNER_UUID', 'BOT_USERNAME'];
-const missingVars = requiredVars.filter(v => !process.env[v]);
-if (missingVars.length > 0) {
-  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-}
+import { logger } from '../utils/logger';
 
 // Initialize API clients
-const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY!);
+const neynar = new NeynarAPIClient({
+  apiKey: process.env.NEYNAR_API_KEY!,
+  apiSecret: process.env.NEYNAR_API_SECRET,
+  signerUuid: process.env.SIGNER_UUID!
+});
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Initialize state tracking
+// Initialize state tracking for deduplication
 const processedMentions = new Set<string>();
 const processedThreads = new Map<string, {
   lastResponseTime: number;
@@ -168,25 +163,34 @@ async function postReply(text: string, parentHash: string, authorUsername: strin
 // Main webhook handler
 export async function handleWebhook(event: any) {
   const requestId = Math.random().toString(36).substring(7);
-  const timestamp = new Date().toISOString();
-
-  console.log('Webhook received:', {
+  
+  logger.info('Webhook received:', {
     requestId,
-    timestamp,
     type: event.body?.type,
-    data: JSON.stringify(event.body?.data).substring(0, 200)
+    data: {
+      hash: event.body?.data?.hash,
+      text: event.body?.data?.text,
+      author: event.body?.data?.author?.username
+    }
   });
 
   try {
-    if (!event.body?.type || !event.body?.data) {
-      console.error('Invalid webhook data structure:', {
-        requestId,
-        body: event.body
-      });
+    const { type, data } = event.body;
+    
+    // Only handle cast.created events
+    if (type !== 'cast.created') {
+      logger.info('Ignoring non-cast event:', { type });
       return;
     }
 
-    const { type, data: cast } = event.body;
+    // Skip if already processed
+    if (processedMentions.has(data.hash)) {
+      logger.info('Skipping duplicate mention:', {
+        requestId,
+        hash: data.hash
+      });
+      return;
+    }
     
     if (type !== 'cast.created') {
       logger.info('Ignoring non-cast event:', {
@@ -220,22 +224,18 @@ export async function handleWebhook(event: any) {
     }
 
     // Check for bot mention
-    const botUsername = process.env.BOT_USERNAME?.toLowerCase();
-    const isBotMentioned = (
-      (cast.text?.toLowerCase().includes(`@${botUsername}`)) ||
-      (Array.isArray(cast.mentioned_profiles) && 
-       cast.mentioned_profiles.some((profile: any) => 
-         profile.username?.toLowerCase() === botUsername))
-    );
+    if (!data.text.toLowerCase().includes('@mienfoo.eth')) {
+      logger.info('Bot not mentioned:', { hash: data.hash });
+      return;
+    }
 
-    logger.info('Mention check:', {
+    logger.info('Bot mention detected:', {
       requestId,
-      timestamp: new Date().toISOString(),
-      castHash: cast.hash,
-      text: cast.text,
-      isBotMentioned,
-      botUsername,
-      mentionedProfiles: cast.mentioned_profiles
+      cast: {
+        hash: data.hash,
+        text: data.text,
+        author: data.author?.username
+      }
     });
 
     console.log('Mention check:', {
@@ -255,30 +255,44 @@ export async function handleWebhook(event: any) {
         }
       });
 
-      try {
-        // Like the mention first
-        console.log('Attempting to like mention:', { castHash: cast.hash });
-        await neynar.publishReaction({
-          signerUuid: process.env.SIGNER_UUID!,
-          reactionType: 'like',
-          target: cast.hash
-        });
-        console.log('Successfully liked mention');
+      // Generate response
+      logger.info('Generating response:', {
+        requestId,
+        prompt: data.text
+      });
 
-        // Generate response
-        const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
-        console.log('Generating response for:', { cleanedMessage });
-        const response = await generateBotResponse(cleanedMessage);
-        console.log('Generated response:', { response });
-        
-        // Post the reply
-        console.log('Attempting to post reply:', { 
-          response,
-          parentHash: cast.hash,
-          author: cast.author.username 
-        });
-        await postReply(response, cast.hash, cast.author.username);
-        console.log('Successfully posted reply');
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [
+          {
+            role: "system",
+            content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
+Your responses should be concise (max 280 chars), friendly, and focus on collecting advice and Pokémon card knowledge. 
+Always end your responses with /collectorscanyon`
+          },
+          { role: "user", content: data.text }
+        ],
+        max_tokens: 100,
+        temperature: 0.7
+      });
+
+      let response = completion.choices[0].message.content;
+      if (!response?.endsWith('/collectorscanyon')) {
+        response = `${response} /collectorscanyon`;
+      }
+
+      logger.info('Posting response:', {
+        requestId,
+        response,
+        parentHash: data.hash
+      });
+
+      // Post response
+      await neynar.publishCast(
+        process.env.SIGNER_UUID!,
+        response,
+        { replyTo: data.hash }
+      );
 
         // Only mark as processed after successful handling
         processedMentions.add(cast.hash);

@@ -1,0 +1,141 @@
+import express from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import OpenAI from 'openai';
+import crypto from 'crypto';
+
+const app = express();
+const port = process.env.PORT || 5000;
+
+// Initialize API clients
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY!);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Track processed mentions
+const processedMentions = new Set<string>();
+
+// Server setup
+app.use(express.json());
+
+// Webhook endpoint
+app.post('/api/webhook', async (req, res) => {
+  const requestId = crypto.randomBytes(4).toString('hex');
+  
+  try {
+    const { type, data } = req.body;
+    
+    console.log('Webhook received:', {
+      requestId,
+      type,
+      data: {
+        hash: data.hash,
+        text: data.text,
+        author: data.author?.username
+      }
+    });
+
+    // Only handle cast.created events
+    if (type !== 'cast.created') {
+      return res.status(200).json({ status: 'ignored', reason: 'not a cast event' });
+    }
+
+    // Check for bot mention
+    if (!data.text.toLowerCase().includes('@mienfoo.eth')) {
+      return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
+    }
+
+    // Avoid duplicate processing
+    if (processedMentions.has(data.hash)) {
+      console.log('Skipping duplicate mention:', {
+        requestId,
+        hash: data.hash
+      });
+      return res.status(200).json({ status: 'ignored', reason: 'already processed' });
+    }
+
+    console.log('Generating response:', {
+      requestId,
+      prompt: data.text
+    });
+
+    // Generate response
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        {
+          role: "system",
+          content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
+Your responses should be concise (max 280 chars), friendly, and focus on collecting advice and Pokémon card knowledge. 
+Always end your responses with /collectorscanyon`
+        },
+        { role: "user", content: data.text }
+      ],
+      max_tokens: 100,
+      temperature: 0.7
+    });
+
+    let response = completion.choices[0].message.content;
+    if (!response?.endsWith('/collectorscanyon')) {
+      response = `${response} /collectorscanyon`;
+    }
+
+    console.log('Posting response:', {
+      requestId,
+      response,
+      parentHash: data.hash
+    });
+
+    // Post response
+    await neynar.publishCast(
+      process.env.SIGNER_UUID!,
+      response,
+      { replyTo: data.hash }
+    );
+
+    // Mark as processed
+    processedMentions.add(data.hash);
+
+    console.log('Response posted successfully:', {
+      requestId,
+      hash: data.hash
+    });
+
+    res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('Error processing webhook:', {
+      requestId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// Start server
+app.listen(port, () => {
+  console.log('OpenAI client initialized successfully');
+  
+  console.log('Neynar client initialized:', {
+    timestamp: new Date().toISOString(),
+    hasApiKey: Boolean(process.env.NEYNAR_API_KEY),
+    hasSignerUuid: Boolean(process.env.SIGNER_UUID),
+    hasBotConfig: true
+  });
+
+  console.log('Server started successfully:', {
+    timestamp: new Date().toISOString(),
+    port,
+    environment: process.env.NODE_ENV,
+    config: {
+      username: process.env.BOT_USERNAME || '834885',
+      fid: process.env.BOT_FID || '834885',
+      hasNeynarKey: Boolean(process.env.NEYNAR_API_KEY),
+      hasSignerUuid: Boolean(process.env.SIGNER_UUID),
+      hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
+      hasWebhookSecret: Boolean(process.env.WEBHOOK_SECRET)
+    }
+  });
+});
