@@ -3,11 +3,10 @@
   "version": 2,
   "buildCommand": "cd api && node build.js",
   "outputDirectory": "api/dist",
-  "devCommand": "npm run dev",
   "functions": {
     "api/*.ts": {
       "memory": 1024,
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "builds": [
@@ -15,13 +14,15 @@
       "src": "api/*.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["api/**"]
+        "includeFiles": ["api/**"],
+        "runtime": "nodejs20"
       }
     }
   ],
   "routes": [
     {
       "src": "/api/webhook",
+      "dest": "/api/webhook.ts",
       "methods": ["POST", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,7 @@
     },
     {
       "src": "/api/health",
+      "dest": "/api/health.ts",
       "methods": ["GET", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
@@ -41,8 +43,8 @@
       }
     },
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "src": "/api",
+      "dest": "/api/index.ts"
     }
   ],
   "env": {
