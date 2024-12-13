@@ -3,7 +3,7 @@ import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
 import OpenAI from 'openai';
 import crypto from 'crypto';
 
-// Initialize API clients with enhanced configuration
+// Initialize API clients with proper error handling
 const neynarConfig = new Configuration({
   apiKey: process.env.NEYNAR_API_KEY!,
   baseOptions: {
@@ -20,92 +20,70 @@ const openai = new OpenAI({
   timeout: 30000
 });
 
+// Enhanced logging for initialization
+console.log('API clients initialized:', {
+  timestamp: new Date().toISOString(),
+  hasNeynarKey: !!process.env.NEYNAR_API_KEY,
+  hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+  hasWebhookSecret: !!process.env.WEBHOOK_SECRET,
+  environment: process.env.NODE_ENV
+});
+
 // Verify webhook signature
 function verifySignature(signature: string, body: string): boolean {
-  if (!process.env.WEBHOOK_SECRET) return false;
-  const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+  const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET!);
   const digest = hmac.update(body).digest('hex');
   return signature === digest;
 }
 
+// Webhook handler with enhanced error handling and logging
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-// Test endpoint for webhook
-export async function testWebhook(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const testPayload = {
-    type: 'cast.created',
-    data: {
-      hash: 'test456',
-      text: 'Hey @mienfoo.eth, what makes a Pokemon card valuable?',
-      author: {
-        fid: '123456',
-        username: 'test_user'
-      },
-      mentioned_profiles: [
-        {
-          fid: '834885',
-          username: 'mienfoo.eth'
-        }
-      ]
-    }
-  };
-
-  try {
-    // Process the test payload
-    await handler({ 
-      method: 'POST', 
-      body: testPayload,
-      headers: {
-        'x-neynar-signature': process.env.WEBHOOK_SECRET ? 
-          crypto.createHmac('sha256', process.env.WEBHOOK_SECRET)
-            .update(JSON.stringify(testPayload))
-            .digest('hex') : 
-          'test'
-      }
-    } as any, res);
-
-    return res.status(200).json({ 
-      status: 'success',
-      message: 'Test webhook processed successfully'
-    });
-  } catch (error) {
-    console.error('Test webhook error:', error);
-    return res.status(500).json({ 
-      error: 'Test webhook failed',
-      message: error instanceof Error ? error.message : String(error)
-    });
-  }
-}
   const requestId = crypto.randomBytes(4).toString('hex');
+  const timestamp = new Date().toISOString();
+
+  // Enhanced request logging
   console.log('Webhook request received:', {
     requestId,
-    timestamp: new Date().toISOString(),
+    timestamp,
     method: req.method,
     headers: {
       'content-type': req.headers['content-type'],
       'x-neynar-signature': req.headers['x-neynar-signature'] ? 
-        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
-    }
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing',
+    },
+    body: req.body ? {
+      type: req.body.type,
+      data: req.body.data ? {
+        hash: req.body.data.hash,
+        text: req.body.data.text?.substring(0, 50) + '...',
+        author: req.body.data.author?.username
+      } : null
+    } : null
   });
 
-  try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Neynar-Signature');
 
-    // Verify signature in production
-    if (process.env.NODE_ENV === 'production') {
-      const signature = req.headers['x-neynar-signature'] as string;
-      if (!signature || !verifySignature(signature, JSON.stringify(req.body))) {
-        console.warn('Invalid webhook signature:', {
-          requestId,
-          signature: signature ? `${signature.substring(0, 10)}...` : 'missing'
-        });
-        return res.status(401).json({ error: 'Invalid signature' });
-      }
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    console.log('Invalid method:', {
+      requestId,
+      timestamp,
+      method: req.method
+    });
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    // Verify signature
+    const signature = req.headers['x-neynar-signature'] as string;
+    if (!signature || !verifySignature(signature, JSON.stringify(req.body))) {
+      return res.status(401).json({ error: 'Invalid signature' });
     }
 
     const { type, data } = req.body;
@@ -117,15 +95,16 @@ export async function testWebhook(req: VercelRequest, res: VercelResponse) {
 
     // Check for bot mention
     const isBotMentioned = data.mentioned_profiles?.some((p: any) => 
-      p.username === 'mienfoo.eth' || p.fid === '834885' || 
-      data.text?.toLowerCase().includes('@mienfoo.eth')
+      p.username === process.env.BOT_USERNAME || 
+      p.fid === process.env.BOT_FID || 
+      data.text?.toLowerCase().includes(`@${process.env.BOT_USERNAME}`)
     );
 
     if (!isBotMentioned) {
       return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
     }
 
-    // Generate response
+    // Generate response using OpenAI
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
@@ -148,46 +127,38 @@ Your responses should be:
     let response = completion.choices[0]?.message?.content || 
       "Processing your request. Please try again shortly. /collectorscanyon";
 
+    // Ensure proper response formatting
     if (!response.endsWith('/collectorscanyon')) {
       response = `${response} /collectorscanyon`;
     }
 
-    // Add like reaction
+    // Add like reaction and reply
     try {
       await neynar.publishReaction({
         signerUuid: process.env.SIGNER_UUID!,
         reactionType: 'like',
         target: data.hash
       });
+
+      const replyText = `@${data.author.username} ${response}`;
+      const reply = await neynar.publishCast({
+        signerUuid: process.env.SIGNER_UUID!,
+        text: replyText,
+        parent: data.hash,
+        channelId: 'collectorscanyon'
+      });
+
+      return res.status(200).json({ 
+        status: 'success',
+        hash: reply.cast.hash
+      });
     } catch (error) {
-      console.error('Error liking cast:', error);
-      // Continue with reply even if like fails
+      console.error('Error in like/reply:', error);
+      throw error;
     }
 
-    // Post reply
-    const replyText = `@${data.author.username} ${response}`;
-    const reply = await neynar.publishCast({
-      signerUuid: process.env.SIGNER_UUID!,
-      text: replyText,
-      parent: data.hash,
-      channelId: 'collectorscanyon'
-    });
-
-    return res.status(200).json({ 
-      status: 'success',
-      hash: reply.cast.hash
-    });
-
   } catch (error) {
-    console.error('Webhook handler error:', {
-      requestId,
-      error: error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : String(error)
-    });
-    
+    console.error('Webhook handler error:', error);
     return res.status(500).json({ 
       error: 'Internal server error',
       message: process.env.NODE_ENV === 'development' ? 

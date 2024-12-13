@@ -6,16 +6,6 @@
   ],
   "routes": [
     {
-      "src": "/api/webhook/test",
-      "methods": ["GET"],
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET",
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
-      },
-      "dest": "/api/webhook/test"
-    },
-    {
       "src": "/api/webhook",
       "methods": ["POST", "OPTIONS"],
       "headers": {
@@ -23,13 +13,10 @@
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
         "Access-Control-Max-Age": "86400",
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
-        "X-XSS-Protection": "1; mode=block",
-        "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Permissions-Policy": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
       },
       "dest": "/api/webhook"
     },
@@ -40,25 +27,23 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
+        "Cache-Control": "s-maxage=30, stale-while-revalidate",
+        "X-Frame-Options": "DENY",
         "X-Content-Type-Options": "nosniff"
       },
       "dest": "/api/health"
     },
     {
       "src": "/(.*)",
-      "methods": ["GET"],
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET",
-        "Cache-Control": "public, max-age=0, must-revalidate"
-      },
       "dest": "/api/index"
     }
   ],
   "env": {
     "NODE_ENV": "production"
   },
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "github": {
+    "silent": true,
+    "autoAlias": true
+  }
 }
