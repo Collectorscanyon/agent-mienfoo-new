@@ -14,17 +14,25 @@ function verifySignature(req: Request): boolean {
   const signature = req.headers['x-neynar-signature'];
   if (!signature || !config.WEBHOOK_SECRET) return false;
 
-  const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
-  const digest = hmac.update(req.rawBody).digest('hex');
-  
-  logger.info('Signature verification:', {
-    timestamp: new Date().toISOString(),
-    received: signature.substring(0, 10) + '...',
-    computed: digest.substring(0, 10) + '...',
-    matches: signature === digest
-  });
+  try {
+    const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
+    const digest = hmac.update(req.rawBody).digest('hex');
+    const signatureHash = (signature as string).replace('sha256=', '');
+    
+    logger.info('Signature verification:', {
+      timestamp: new Date().toISOString(),
+      received: signatureHash.substring(0, 10) + '...',
+      computed: digest.substring(0, 10) + '...'
+    });
 
-  return signature === digest;
+    return crypto.timingSafeEqual(
+      Buffer.from(signatureHash),
+      Buffer.from(digest)
+    );
+  } catch (error) {
+    logger.error('Signature verification error:', error);
+    return false;
+  }
 }
 
 // Webhook endpoint with enhanced logging and proper signature verification
@@ -60,13 +68,29 @@ router.post('/', express.json({
       data: {
         hash: data?.hash,
         text: data?.text,
-        author: data?.author?.username
+        author: data?.author?.username,
+        mentioned_profiles: data?.mentioned_profiles
       }
     });
 
     // Only handle cast.created events
     if (type !== 'cast.created') {
-      return res.status(200).json({ status: 'ignored', reason: 'not a cast event' });
+      return res.status(200).json({ 
+        status: 'ignored', 
+        reason: 'not a cast event' 
+      });
+    }
+
+    // Validate required fields
+    if (!data?.hash || !data?.text || !data?.author) {
+      logger.error('Invalid webhook data:', {
+        requestId,
+        data
+      });
+      return res.status(400).json({ 
+        error: 'Invalid webhook data',
+        missing: ['hash', 'text', 'author'].filter(field => !data?.[field])
+      });
     }
 
     // Check for bot mention
@@ -75,13 +99,22 @@ router.post('/', express.json({
     );
 
     if (!isBotMentioned) {
-      return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
+      return res.status(200).json({ 
+        status: 'ignored', 
+        reason: 'bot not mentioned' 
+      });
     }
 
     // Avoid duplicate processing
     if (processedMentions.has(data.hash)) {
-      logger.info('Skipping duplicate mention:', { requestId, hash: data.hash });
-      return res.status(200).json({ status: 'ignored', reason: 'already processed' });
+      logger.info('Skipping duplicate mention:', { 
+        requestId, 
+        hash: data.hash 
+      });
+      return res.status(200).json({ 
+        status: 'ignored', 
+        reason: 'already processed' 
+      });
     }
 
     // Send immediate acknowledgment before processing
