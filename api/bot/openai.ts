@@ -38,9 +38,16 @@ if (!process.env.OPENAI_API_KEY) {
 // Initialize OpenAI with environment variables and configuration
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-    // Removed timeout as it's not a valid parameter for chat completions
-    maxRetries: 2,
+    maxRetries: 3,
+    timeout: 30000
 });
+
+// Simple in-memory cache for responses
+const responseCache = new Map<string, { response: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache TTL
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 30;
+const requestTimestamps: number[] = [];
 
 interface OpenAIError extends Error {
     status?: number;
@@ -50,6 +57,35 @@ interface OpenAIError extends Error {
 export async function generateBotResponse(message: string): Promise<string> {
     const timestamp = new Date().toISOString();
     const requestId = Math.random().toString(36).substring(7);
+    
+    // Rate limiting check
+    const now = Date.now();
+    requestTimestamps.push(now);
+    requestTimestamps.splice(0, requestTimestamps.length - MAX_REQUESTS_PER_WINDOW);
+    
+    if (requestTimestamps.length >= MAX_REQUESTS_PER_WINDOW && 
+        (now - requestTimestamps[0]) <= RATE_LIMIT_WINDOW) {
+        console.warn('Rate limit exceeded:', {
+            requestId,
+            timestamp,
+            requestCount: requestTimestamps.length,
+            windowSize: RATE_LIMIT_WINDOW
+        });
+        return "I'm taking a quick break to recharge my collection wisdom. Please try again in a moment! 🥋";
+    }
+
+    // Check cache
+    const cacheKey = message.toLowerCase().trim();
+    const cachedResponse = responseCache.get(cacheKey);
+    if (cachedResponse && (Date.now() - cachedResponse.timestamp) < CACHE_TTL) {
+        console.log('Using cached response:', {
+            requestId,
+            timestamp,
+            originalMessage: message,
+            cacheAge: Date.now() - cachedResponse.timestamp
+        });
+        return cachedResponse.response;
+    }
     
     console.log('Starting response generation:', {
         requestId,
