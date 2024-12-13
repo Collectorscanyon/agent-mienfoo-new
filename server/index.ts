@@ -82,53 +82,76 @@ app.get('/', (_req, res) => {
 logger.info('Registering webhook routes...');
 app.use('/api/webhook', webhookRouter);
 
-// Start server
+// Start server with port fallback
+const ports = [5000, 5001, 5002, 5003];
 let server: ReturnType<typeof app.listen> | null = null;
 
 const startServer = async () => {
-  try {
-    server = app.listen(port, '0.0.0.0', () => {
-      logger.info('Server started successfully:', {
-        timestamp: new Date().toISOString(),
-        port,
-        environment: process.env.NODE_ENV || 'development',
-        config: {
-          username: process.env.BOT_USERNAME,
-          fid: process.env.BOT_FID,
-          hasNeynarKey: !!process.env.NEYNAR_API_KEY,
-          hasSignerUuid: !!process.env.SIGNER_UUID,
-          hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-          hasWebhookSecret: !!process.env.WEBHOOK_SECRET
-        }
-      });
-    });
+  for (const currentPort of ports) {
+    try {
+      server = await new Promise((resolve, reject) => {
+        const srv = app.listen(currentPort, '0.0.0.0', () => {
+          logger.info('Server started successfully:', {
+            timestamp: new Date().toISOString(),
+            port: currentPort,
+            environment: process.env.NODE_ENV || 'development',
+            config: {
+              username: process.env.BOT_USERNAME,
+              fid: process.env.BOT_FID,
+              hasNeynarKey: !!process.env.NEYNAR_API_KEY,
+              hasSignerUuid: !!process.env.SIGNER_UUID,
+              hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+              hasWebhookSecret: !!process.env.WEBHOOK_SECRET
+            }
+          });
+          resolve(srv);
+        });
 
-    server.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code === 'EADDRINUSE') {
-        logger.error(`Port ${port} is already in use. Please try a different port.`);
-        process.exit(1);
-      } else {
-        logger.error('Server error:', error);
-        process.exit(1);
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to start server:', error);
+        srv.on('error', (error: NodeJS.ErrnoException) => {
+          if (error.code === 'EADDRINUSE') {
+            logger.warn(`Port ${currentPort} is in use, trying next port...`);
+            srv.close(() => resolve(null));
+          } else {
+            reject(error);
+          }
+        });
+      });
+
+      if (server) break;
+    } catch (error) {
+      logger.error('Error starting server:', {
+        port: currentPort,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  if (!server) {
+    logger.error('Failed to start server on any available port');
     process.exit(1);
   }
 };
 
 // Handle cleanup
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received. Shutting down gracefully...');
+const cleanup = () => {
   if (server) {
     server.close(() => {
-      logger.info('Server closed');
+      logger.info('Server closed gracefully');
       process.exit(0);
     });
   } else {
     process.exit(0);
   }
+};
+
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received. Shutting down gracefully...');
+  cleanup();
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received. Shutting down gracefully...');
+  cleanup();
 });
 
 // Handle unhandled rejections
