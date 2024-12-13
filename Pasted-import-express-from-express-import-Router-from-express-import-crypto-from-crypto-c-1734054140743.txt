@@ -1,0 +1,81 @@
+import express from 'express';
+import { Router } from 'express';
+import crypto from 'crypto';
+
+const router = Router();
+
+// Middleware to validate webhook requests
+const validateWebhook = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Ensure request has the required content type
+  if (req.headers['content-type'] !== 'application/json') {
+    console.error('Invalid content type', {
+      contentType: req.headers['content-type'],
+      path: req.path,
+      method: req.method
+    });
+    return res.status(400).json({ error: 'Invalid content type' });
+  }
+
+  // Add signature verification if required
+  const signature = req.headers['x-webhook-signature'];
+  if (process.env.WEBHOOK_SECRET && signature) {
+    const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+    const digest = hmac.update(JSON.stringify(req.body)).digest('hex');
+    
+    if (signature !== `sha256=${digest}`) {
+      console.error('Invalid webhook signature', {
+        path: req.path,
+        method: req.method
+      });
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+
+  next();
+};
+
+// Webhook endpoint
+router.post('/webhook', validateWebhook, async (req: express.Request, res: express.Response) => {
+  try {
+    console.log('Webhook received:', {
+      timestamp: new Date().toISOString(),
+      body: req.body,
+      headers: req.headers
+    });
+
+    // Process webhook payload
+    const { event_type, data } = req.body;
+    
+    // Handle different event types
+    switch (event_type) {
+      case 'message':
+        // Handle message event
+        await handleMessageEvent(data);
+        break;
+      case 'user_action':
+        // Handle user action event
+        await handleUserActionEvent(data);
+        break;
+      default:
+        console.warn('Unknown event type:', event_type);
+    }
+
+    res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Event handlers
+async function handleMessageEvent(data: any) {
+  // Implement message event handling logic
+  console.log('Processing message event:', data);
+}
+
+async function handleUserActionEvent(data: any) {
+  // Implement user action event handling logic
+  console.log('Processing user action event:', data);
+}
+
+export default router;
