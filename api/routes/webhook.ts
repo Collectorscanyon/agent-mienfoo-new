@@ -5,6 +5,31 @@ import { handleWebhook } from '../bot/handlers';
 
 const router = Router();
 
+// Production error handler
+const errorHandler = (error: Error, req: Request, res: Response) => {
+  const timestamp = new Date().toISOString();
+  const requestId = req.headers['x-request-id'] || Math.random().toString(36).substring(7);
+  
+  console.error('Webhook error:', {
+    requestId,
+    timestamp,
+    path: req.path,
+    error: error instanceof Error ? {
+      name: error.name,
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    } : error
+  });
+
+  if (!res.headersSent) {
+    res.status(500).json({ 
+      error: 'Internal server error',
+      requestId,
+      message: process.env.NODE_ENV === 'development' ? error.message : 'An unexpected error occurred'
+    });
+  }
+};
+
 router.post('/', express.json(), async (req: Request, res: Response) => {
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);

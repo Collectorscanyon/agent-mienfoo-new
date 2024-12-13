@@ -10,6 +10,30 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
+// Production security headers
+if (process.env.NODE_ENV === 'production') {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    next();
+  });
+}
+
+// Rate limiting for production
+if (process.env.NODE_ENV === 'production') {
+  const rateLimit = require('express-rate-limit');
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: { error: 'Too many requests from this IP, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use('/api/webhook', limiter);
+}
+
 // Verify required environment variables
 const requiredEnvVars = [
   'OPENAI_API_KEY',
