@@ -12,7 +12,6 @@ const router = Router();
 
 const neynarConfig = new Configuration({
   apiKey: config.NEYNAR_API_KEY!,
-  fid: parseInt(config.BOT_FID || '834885'),
   signerUuid: config.SIGNER_UUID
 });
 
@@ -28,17 +27,22 @@ function verifySignature(signature: string | undefined, body: Buffer): boolean {
     timestamp: new Date().toISOString(),
     hasSignature: !!signature,
     hasWebhookSecret: !!config.WEBHOOK_SECRET,
-    bodyLength: body?.length
+    bodyLength: body?.length,
+    environment: process.env.NODE_ENV
   });
 
   // Skip verification in development
-  if (process.env.NODE_ENV === 'development') {
-    console.log('Debug: Skipping signature verification in development');
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('Debug: Skipping signature verification in development/testing');
     return true;
   }
 
   if (!signature || !config.WEBHOOK_SECRET || !body) {
-    console.log('Debug: Missing required verification components');
+    console.log('Debug: Missing required verification components:', {
+      hasSignature: !!signature,
+      hasSecret: !!config.WEBHOOK_SECRET,
+      hasBody: !!body
+    });
     return false;
   }
 
@@ -68,47 +72,28 @@ router.post('/', express.json({
   },
   limit: '50kb'
 }), async (req: WebhookRequest, res: Response) => {
-  // Log full request details
-  console.log('Debug: Full webhook request:', {
-    timestamp: new Date().toISOString(),
-    headers: {
-      'content-type': req.headers['content-type'],
-      'content-length': req.headers['content-length'],
-      'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing',
-      'user-agent': req.headers['user-agent']
-    },
-    body: req.body,
-    rawBody: req.rawBody?.toString()
-  });
   const requestId = crypto.randomBytes(4).toString('hex');
   
   try {
-    console.log('Debug: Webhook received:', {
-      requestId,
-      timestamp: new Date().toISOString(),
-      headers: {
-        'content-type': req.headers['content-type'],
-        'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
-      }
-    });
-
     // Log full request details
-    console.log('Debug: Full webhook request:', {
+    console.log('Debug: Incoming webhook request:', {
       requestId,
       timestamp: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
       headers: {
         'content-type': req.headers['content-type'],
         'content-length': req.headers['content-length'],
-        'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
+        'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing',
+        'user-agent': req.headers['user-agent']
       },
-      body: req.body,
-      rawBody: req.rawBody?.toString()
+      body: JSON.stringify(req.body, null, 2)
     });
 
     // Skip signature verification in development
-    if (process.env.NODE_ENV !== 'development') {
+    if (process.env.NODE_ENV === 'production') {
       const signature = req.headers['x-neynar-signature'] as string;
-      if (!verifySignature(signature, req.rawBody)) {
+      if (!verifySignature(signature, req.rawBody!)) {
         console.error('Debug: Invalid signature:', {
           requestId,
           timestamp: new Date().toISOString()
@@ -125,7 +110,8 @@ router.post('/', express.json({
       data: {
         hash: data?.hash,
         text: data?.text,
-        author: data?.author?.username
+        author: data?.author?.username,
+        mentionedProfiles: data?.mentioned_profiles
       }
     });
 
@@ -133,7 +119,7 @@ router.post('/', express.json({
       return res.status(200).json({ status: 'ignored', reason: 'not a cast event' });
     }
 
-    const { hash, text, author, mentioned_profiles } = data;
+    const { hash, text, mentioned_profiles } = data;
 
     // Skip if already processed
     if (processedMentions.has(hash)) {
@@ -148,7 +134,7 @@ router.post('/', express.json({
     console.log('Debug: Checking bot mention:', {
       requestId,
       mentioned_profiles,
-      botUsername: config.BOT_USERNAME,
+      botUsername: config.BOT_USERNAME || 'mienfoo.eth',
       text
     });
 
@@ -167,15 +153,7 @@ router.post('/', express.json({
 
     console.log('Debug: Bot mention confirmed:', {
       requestId,
-      text,
-      author: author?.username
-    });
-
-    console.log('Debug: Processing mention:', {
-      requestId,
-      author: author.username,
-      text,
-      hash
+      text
     });
 
     // Generate response
@@ -207,6 +185,7 @@ Always end your responses with /collectorscanyon`
 
     // Post response
     await neynar.publishCast({
+      signerUuid: config.SIGNER_UUID!,
       text: response,
       replyTo: hash
     });
