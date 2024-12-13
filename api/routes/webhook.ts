@@ -12,8 +12,12 @@ router.post('/', express.json(), async (req: Request, res: Response) => {
   console.log('Webhook received:', {
     requestId,
     timestamp,
-    body: req.body,
-    signature: req.headers['x-neynar-signature']
+    type: req.body?.type,
+    text: req.body?.data?.text,
+    author: req.body?.data?.author?.username,
+    mentions: req.body?.data?.mentioned_profiles,
+    signature: req.headers['x-neynar-signature'] ? 
+      `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
   });
 
   try {

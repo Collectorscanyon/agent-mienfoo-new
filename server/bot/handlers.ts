@@ -373,7 +373,7 @@ async function generateTextResponse(text: string): Promise<string> {
   return await generateBotResponse(cleanedMessage);
 }
 
-const processedCastHashes = new Set<string>(); // Reintroduced from original code
+const processedCastHashes = new Set<string>();
 
 // Removed automatic channel engagement functionality to prevent duplicate responses
 // and focus solely on webhook-driven interactions
