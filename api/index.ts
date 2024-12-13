@@ -62,24 +62,47 @@ app.post(['/', '/webhook'], async (req: Request, res: Response) => {
     headers: req.headers,
     body: req.body,
     hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-    hasNeynarKey: !!process.env.NEYNAR_API_KEY
+    hasNeynarKey: !!process.env.NEYNAR_API_KEY,
+    signature: req.headers['x-neynar-signature']
   });
 
-  // Verify webhook signature if present
-  const signature = req.headers['x-neynar-signature'];
-  if (signature && process.env.WEBHOOK_SECRET) {
+  // Enhanced signature verification
+  const signature = req.headers['x-neynar-signature'] as string;
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  
+  if (!webhookSecret) {
+    console.error('Missing webhook secret:', { requestId, timestamp });
+    return res.status(500).send('Server configuration error');
+  }
+
+  try {
     const crypto = await import('crypto');
-    const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
-    const computedSignature = hmac.update(JSON.stringify(req.body)).digest('hex');
+    const hmac = crypto.createHmac('sha256', webhookSecret);
+    const rawBody = JSON.stringify(req.body);
+    const computedSignature = hmac.update(rawBody).digest('hex');
     
-    if (computedSignature !== signature) {
+    console.log('Signature verification:', {
+      requestId,
+      timestamp,
+      hasSignature: !!signature,
+      signatureMatch: computedSignature === signature,
+      receivedSignature: signature?.substring(0, 10) + '...',
+      computedSignaturePrefix: computedSignature.substring(0, 10) + '...'
+    });
+
+    if (!signature || computedSignature !== signature) {
       console.error('Invalid webhook signature:', {
         requestId,
         timestamp,
-        path: req.path
+        path: req.path,
+        receivedSignature: signature?.substring(0, 10) + '...',
+        computedSignature: computedSignature.substring(0, 10) + '...'
       });
-      return res.status(401).send('Invalid webhook signature');
+      return res.status(401).json({ error: 'Invalid signature', details: 'Signature verification failed' });
     }
+  } catch (error) {
+    console.error('Error verifying signature:', error);
+    return res.status(500).json({ error: 'Internal server error', details: 'Error processing signature' });
   }
 
   // Check if the payload includes required fields
