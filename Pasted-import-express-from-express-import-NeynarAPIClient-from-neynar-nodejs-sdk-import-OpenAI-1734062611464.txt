@@ -1,0 +1,192 @@
+import express from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import OpenAI from 'openai';
+import crypto from 'crypto';
+
+// Initialize Express app
+const app = express();
+const port = process.env.PORT || 5000;
+
+// Initialize API clients with configuration
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY!, {
+  maxRetries: 3,
+  timeoutMs: 10000
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  maxRetries: 3,
+  timeout: 10000
+});
+
+// Middleware for parsing JSON bodies
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
+// Set to track processed mentions
+const processedMentions = new Set<string>();
+
+// Verify Neynar webhook signature
+function verifySignature(req: express.Request): boolean {
+  const signature = req.headers['x-neynar-signature'];
+  if (!signature || !process.env.WEBHOOK_SECRET) return false;
+
+  const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+  const digest = hmac.update(req.rawBody).digest('hex');
+  return `sha256=${digest}` === signature;
+}
+
+// Webhook endpoint
+app.post('/api/webhook', async (req, res) => {
+  const requestId = crypto.randomBytes(4).toString('hex');
+  
+  try {
+    // Log incoming request
+    console.log('Webhook received:', {
+      requestId,
+      timestamp: new Date().toISOString(),
+      headers: {
+        'content-type': req.headers['content-type'],
+        'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
+      }
+    });
+
+    // Verify webhook signature
+    if (!verifySignature(req)) {
+      console.error('Invalid signature:', { requestId });
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    const { type, data } = req.body;
+
+    // Log webhook data
+    console.log('Processing webhook:', {
+      requestId,
+      type,
+      hash: data?.hash,
+      text: data?.text,
+      author: data?.author?.username
+    });
+
+    // Only handle cast.created events
+    if (type !== 'cast.created') {
+      return res.status(200).json({ status: 'ignored', reason: 'not a cast event' });
+    }
+
+    // Check for bot mention
+    if (!data.text.toLowerCase().includes('@mienfoo.eth')) {
+      return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
+    }
+
+    // Avoid duplicate processing
+    if (processedMentions.has(data.hash)) {
+      console.log('Skipping duplicate mention:', { requestId, hash: data.hash });
+      return res.status(200).json({ status: 'ignored', reason: 'already processed' });
+    }
+
+    // Generate response with retries
+    let response;
+    for (let i = 0; i < 3; i++) {
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4-turbo-preview",
+          messages: [
+            {
+              role: "system",
+              content: `You are Mienfoo, a knowledgeable Pokémon card collector bot. 
+Your responses should be concise (max 280 chars), friendly, and focus on collecting advice 
+and Pokémon card knowledge. Always end your responses with /collectorscanyon`
+            },
+            { role: "user", content: data.text }
+          ],
+          max_tokens: 100,
+          temperature: 0.7
+        });
+
+        response = completion.choices[0].message.content;
+        if (!response?.endsWith('/collectorscanyon')) {
+          response = `${response} /collectorscanyon`;
+        }
+        break;
+      } catch (error) {
+        if (i === 2) throw error;
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      }
+    }
+
+    // Post response with retries
+    for (let i = 0; i < 3; i++) {
+      try {
+        await neynar.publishCast(
+          process.env.SIGNER_UUID!,
+          response!,
+          { replyTo: data.hash }
+        );
+        break;
+      } catch (error) {
+        if (i === 2) throw error;
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      }
+    }
+
+    // Mark as processed
+    processedMentions.add(data.hash);
+
+    // Log success
+    console.log('Response posted successfully:', {
+      requestId,
+      hash: data.hash,
+      response
+    });
+
+    res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('Error processing webhook:', {
+      requestId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  console.log('Health check request received:', {
+    timestamp: new Date().toISOString(),
+    method: req.method,
+    path: req.path
+  });
+  res.status(200).json({ status: 'ok' });
+});
+
+// Start server
+app.listen(port, () => {
+  console.log('OpenAI client initialized successfully');
+  
+  console.log('Neynar client initialized:', {
+    timestamp: new Date().toISOString(),
+    hasApiKey: Boolean(process.env.NEYNAR_API_KEY),
+    hasSignerUuid: Boolean(process.env.SIGNER_UUID),
+    hasBotConfig: true
+  });
+
+  console.log('Server started successfully:', {
+    timestamp: new Date().toISOString(),
+    port,
+    environment: process.env.NODE_ENV,
+    config: {
+      username: process.env.BOT_USERNAME || '834885',
+      fid: process.env.BOT_FID || '834885',
+      hasNeynarKey: Boolean(process.env.NEYNAR_API_KEY),
+      hasSignerUuid: Boolean(process.env.SIGNER_UUID),
+      hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
+      hasWebhookSecret: Boolean(process.env.WEBHOOK_SECRET)
+    }
+  });
+});
+
+export default app;
