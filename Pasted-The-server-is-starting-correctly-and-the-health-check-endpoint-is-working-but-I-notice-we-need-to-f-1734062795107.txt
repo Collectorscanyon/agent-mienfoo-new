@@ -1,0 +1,50 @@
+The server is starting correctly and the health check endpoint is working, but I notice we need to fix the actual webhook handling. Let me search for the exact Neynar webhook spec to ensure our implementation matches it.View Result from brave_web_search from brave-search (local){
+  `query`: `neynar webhook cast.created payload structure api specification`
+}Title: Integrate webhooks with Warpcast DCs using Neynar
+Description: This guide explains how to <strong>create</strong> <strong>a</strong> <strong>webhook</strong> that sends direct <strong>casts</strong> (DCs) to users on Farcaster based on <strong>specific</strong> keywords in their <strong>casts</strong>, using a simple server setup with Bun JavaScript and Warpcast <strong>API</strong>.
+URL: https://docs.neynar.com/docs/neynar-webhooks-warpcast-dcs
+
+Title: Setup webhooks in dashboard - Neynar Developer
+Description: <strong>Neynar</strong> <strong>webhooks</strong> provide real-time updates on Farcaster protocol events, allowing developers to integrate these updates into applications by setting up <strong>webhooks</strong> through the <strong>Neynar</strong> developer portal and using tools like ngrok to test them.
+URL: https://docs.neynar.com/docs/how-to-setup-webhooks-from-the-dashboard
+
+Title: Create a webhook - Neynar Developer
+Description: <strong>Create</strong> <strong>a</strong> <strong>webhook</strong>
+URL: https://docs.neynar.com/reference/publish-webhook
+
+Title: Example webhook payload
+Description: <strong>Webhooks</strong> deliver the responses to your typeforms in JSON format. Let&#x27;s walk through each object in a typical <strong>webhook</strong> <strong>payload</strong>. First, here&#x27;s what a complete <strong>payload</strong> looks like when it&#x27;s delivered to a <strong>webhook</strong>: · Now, let&#x27;s take a closer look at the elements in each part of the response
+URL: https://www.typeform.com/developers/webhooks/example-payload/
+
+Title: Event payloads | Bitbucket Cloud | Atlassian Support
+Description: When you have a <strong>webhook</strong> with an event, Bitbucket Cloud sends the event request to the server URL for the <strong>webhook</strong> whenever that event occurs
+URL: https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/
+
+Title: How to set up Neynar webhooks through your developer portal
+Description: Setting up Farcaster <strong>webhooks</strong> <strong>through</strong> <strong>Neynar</strong> developer portal
+URL: https://docs.neynar.com/docs/how-to-use-neynar-webhooks
+
+Title: Set up webhooks for farcaster events programmatically with Neynar
+Description: The document provides a guide on setting up <strong>Neynar</strong> <strong>webhooks</strong> using the <strong>Neynar</strong> SDK in a Node.js environment to receive real-time updates from the Farcaster protocol, including instructions for <strong>creating</strong> a server, installing necessary packages, and testing the <strong>webhook</strong> with ngrok.
+URL: https://docs.neynar.com/docs/how-to-create-webhooks-on-the-go-using-the-sdk
+
+Title: standard-webhooks/spec/standard-webhooks.md at main · standard-webhooks/standard-webhooks
+Description: The Standard <strong>Webhooks</strong> <strong>specification</strong>. Contribute to standard-<strong>webhooks</strong>/standard-<strong>webhooks</strong> development by <strong>creating</strong> an account on GitHub.
+URL: https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md
+
+Title: Webhook data payload
+Description: Sending the <strong>Webhook</strong> data <strong>payload</strong> Whenever one of the defined booking lifecycle events configured for your <strong>Webhook</strong> subscription occurs in your OnceHub account, an HTTP POST message is triggered, which pushes the relevant booking data to your specified URL endpoint.
+URL: https://developers.oncehub.com/docs/webhook-data-payload
+
+Title: Neynar · Farcaster for ambitious builders
+Description: Raised $14M and hiring · Serving 1,000+ companies and developers
+URL: https://neynar.com/Let me update the webhook handler to match Neynar's exact specifications:
+Neynar Webhook HandlerClick to open code
+Key improvements:
+
+Fixed signature verification
+Added proper handling of mentioned_profiles
+Simplified the bot mention check
+Added detailed logging at each step
+Fixed response handling
+Improved error handling
