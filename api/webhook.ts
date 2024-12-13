@@ -29,6 +29,56 @@ function verifySignature(signature: string, body: string): boolean {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+// Test endpoint for webhook
+export async function testWebhook(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const testPayload = {
+    type: 'cast.created',
+    data: {
+      hash: 'test456',
+      text: 'Hey @mienfoo.eth, what makes a Pokemon card valuable?',
+      author: {
+        fid: '123456',
+        username: 'test_user'
+      },
+      mentioned_profiles: [
+        {
+          fid: '834885',
+          username: 'mienfoo.eth'
+        }
+      ]
+    }
+  };
+
+  try {
+    // Process the test payload
+    await handler({ 
+      method: 'POST', 
+      body: testPayload,
+      headers: {
+        'x-neynar-signature': process.env.WEBHOOK_SECRET ? 
+          crypto.createHmac('sha256', process.env.WEBHOOK_SECRET)
+            .update(JSON.stringify(testPayload))
+            .digest('hex') : 
+          'test'
+      }
+    } as any, res);
+
+    return res.status(200).json({ 
+      status: 'success',
+      message: 'Test webhook processed successfully'
+    });
+  } catch (error) {
+    console.error('Test webhook error:', error);
+    return res.status(500).json({ 
+      error: 'Test webhook failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
   const requestId = crypto.randomBytes(4).toString('hex');
   console.log('Webhook request received:', {
     requestId,

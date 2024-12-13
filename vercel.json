@@ -6,6 +6,16 @@
   ],
   "routes": [
     {
+      "src": "/api/webhook/test",
+      "methods": ["GET"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET",
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
+      },
+      "dest": "/api/webhook/test"
+    },
+    {
       "src": "/api/webhook",
       "methods": ["POST", "OPTIONS"],
       "headers": {
