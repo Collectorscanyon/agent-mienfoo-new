@@ -1,11 +1,17 @@
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from '../config';
-import { analyzeImage, generateImageResponse } from './vision';
 import { generateBotResponse } from './openai';
 
-// Initialize Neynar client
+// Initialize Neynar client with enhanced error handling
 const neynar = new NeynarAPIClient({ 
   apiKey: config.NEYNAR_API_KEY
+});
+
+console.log('Neynar client initialized:', {
+  timestamp: new Date().toISOString(),
+  hasApiKey: !!config.NEYNAR_API_KEY,
+  hasSignerUuid: !!config.SIGNER_UUID,
+  hasBotConfig: !!config.BOT_USERNAME && !!config.BOT_FID
 });
 
 // Track processed threads and responses
@@ -33,15 +39,21 @@ function isBotMessage(cast: any): boolean {
     return false;
   }
   
-  // Strict bot identity check using both FID and username
-  const botUsernames = [
-    config.BOT_USERNAME.toLowerCase(),
-    'mienfoo.eth'
-  ];
+  // Enhanced bot identity check with multiple patterns
+  const botIdentifiers = {
+    fid: config.BOT_FID,
+    usernames: [
+      config.BOT_USERNAME.toLowerCase(),
+      'mienfoo.eth',
+      'mienfoo'
+    ]
+  };
   
   const isBotAuthor = (
-    cast.author.fid?.toString() === config.BOT_FID ||
-    botUsernames.includes(cast.author.username?.toLowerCase())
+    cast.author.fid?.toString() === botIdentifiers.fid ||
+    botIdentifiers.usernames.some(username => 
+      cast.author.username?.toLowerCase() === username
+    )
   );
 
   // Enhanced logging for bot message detection with full context
@@ -125,11 +137,13 @@ function shouldProcessThread(cast: any): boolean {
 }
 
 export async function handleWebhook(event: any) {
+  const timestamp = new Date().toISOString();
+  const requestId = Math.random().toString(36).substring(7);
+  
   try {
-    const timestamp = new Date().toISOString();
-    
-    // Enhanced webhook logging with full context
+    // Enhanced webhook logging with full context and request tracking
     console.log('Webhook event received:', {
+      requestId,
       timestamp,
       eventType: event.body?.type,
       castHash: event.body?.data?.hash,
@@ -138,7 +152,8 @@ export async function handleWebhook(event: any) {
       author: event.body?.data?.author?.username,
       text: event.body?.data?.text,
       isReply: !!event.body?.data?.parent_hash,
-      channelContext: event.body?.data?.author_channel_context
+      channelContext: event.body?.data?.author_channel_context,
+      mentionedProfiles: event.body?.data?.mentioned_profiles
     });
 
     if (!event.body?.type || !event.body?.data) {
