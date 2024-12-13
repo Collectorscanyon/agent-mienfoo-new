@@ -92,14 +92,29 @@ router.post('/', express.json({
       }
     });
 
-    // Verify signature
-    const signature = req.headers['x-neynar-signature'] as string;
-    if (!verifySignature(signature, req.rawBody)) {
-      console.error('Debug: Invalid signature:', {
-        requestId,
-        timestamp: new Date().toISOString()
-      });
-      return res.status(401).json({ error: 'Invalid signature' });
+    // Log full request details
+    console.log('Debug: Full webhook request:', {
+      requestId,
+      timestamp: new Date().toISOString(),
+      headers: {
+        'content-type': req.headers['content-type'],
+        'content-length': req.headers['content-length'],
+        'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
+      },
+      body: req.body,
+      rawBody: req.rawBody?.toString()
+    });
+
+    // Skip signature verification in development
+    if (process.env.NODE_ENV !== 'development') {
+      const signature = req.headers['x-neynar-signature'] as string;
+      if (!verifySignature(signature, req.rawBody)) {
+        console.error('Debug: Invalid signature:', {
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
     }
 
     const { type, data } = req.body;
@@ -130,17 +145,31 @@ router.post('/', express.json({
     }
 
     // Check for bot mention
+    console.log('Debug: Checking bot mention:', {
+      requestId,
+      mentioned_profiles,
+      botUsername: config.BOT_USERNAME,
+      text
+    });
+
     const isBotMentioned = mentioned_profiles?.some(
-      (profile: any) => profile.username === config.BOT_USERNAME
+      (profile: any) => profile.username.toLowerCase() === (config.BOT_USERNAME || 'mienfoo.eth').toLowerCase()
     );
 
     if (!isBotMentioned) {
       console.log('Debug: Bot not mentioned:', {
         requestId,
-        text
+        text,
+        mentioned_profiles: mentioned_profiles?.map((p: any) => p.username)
       });
       return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
     }
+
+    console.log('Debug: Bot mention confirmed:', {
+      requestId,
+      text,
+      author: author?.username
+    });
 
     console.log('Debug: Processing mention:', {
       requestId,
