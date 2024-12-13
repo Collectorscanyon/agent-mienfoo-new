@@ -8,16 +8,15 @@ import { config } from './config/environment';
 const app = express();
 const port = 5000;
 
-// Initialize API clients with configuration
+// Initialize API clients with proper configuration
 const neynarConfig = new Configuration({
-  apiKey: config.NEYNAR_API_KEY,
-  fid: parseInt(config.BOT_FID),
+  apiKey: config.NEYNAR_API_KEY!,
+  fid: parseInt(config.BOT_FID || '834885'),
   signerUuid: config.SIGNER_UUID
 });
 
 const neynar = new NeynarAPIClient(neynarConfig);
-
-const openai = new OpenAI({
+const openai = new OpenAI({ 
   apiKey: config.OPENAI_API_KEY,
   maxRetries: 3,
   timeout: 10000

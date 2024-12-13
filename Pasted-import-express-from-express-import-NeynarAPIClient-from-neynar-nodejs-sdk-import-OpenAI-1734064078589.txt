@@ -1,0 +1,107 @@
+import express from 'express';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import OpenAI from 'openai';
+import crypto from 'crypto';
+
+const app = express();
+const port = process.env.PORT || 5000;
+
+// Initialize API clients
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY!);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Middleware
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  console.log('Health check received');
+  res.json({ status: 'ok' });
+});
+
+// Webhook endpoint
+app.post('/api/webhook', async (req, res) => {
+  const requestId = crypto.randomBytes(4).toString('hex');
+  
+  try {
+    console.log('Webhook received:', {
+      requestId,
+      headers: req.headers,
+      body: req.body
+    });
+
+    // For testing, temporarily skip signature verification
+    const { type, data } = req.body;
+    
+    if (data?.mentioned_profiles?.some((p: any) => p.username === 'mienfoo.eth')) {
+      console.log('Bot mention detected:', {
+        requestId,
+        text: data.text
+      });
+
+      // Process mention
+      const response = await generateResponse(data.text);
+      await neynar.publishCast(
+        process.env.SIGNER_UUID!,
+        response,
+        { replyTo: data.hash }
+      );
+
+      console.log('Response posted:', {
+        requestId,
+        response
+      });
+    }
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+async function generateResponse(text: string) {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4-turbo-preview",
+    messages: [
+      {
+        role: "system",
+        content: "You are Mienfoo, a knowledgeable Pokémon card collector. Keep responses under 280 characters and end with /collectorscanyon"
+      },
+      { role: "user", content: text }
+    ],
+    max_tokens: 100
+  });
+
+  let response = completion.choices[0].message.content || 
+    "Processing your request. Please try again shortly. /collectorscanyon";
+
+  if (!response.endsWith('/collectorscanyon')) {
+    response = `${response} /collectorscanyon`;
+  }
+
+  return response;
+}
+
+// Start server
+app.listen(port, '0.0.0.0', () => {
+  console.log('Server started successfully:', {
+    timestamp: new Date().toISOString(),
+    port,
+    environment: process.env.NODE_ENV,
+    config: {
+      username: '834885',
+      fid: '834885',
+      hasNeynarKey: Boolean(process.env.NEYNAR_API_KEY),
+      hasSignerUuid: Boolean(process.env.SIGNER_UUID),
+      hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
+      hasWebhookSecret: Boolean(process.env.WEBHOOK_SECRET)
+    }
+  });
+});
+
+export default app;
