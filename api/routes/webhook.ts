@@ -84,8 +84,8 @@ router.post('/', requestSizeLimit, validateRequest, async (req: Request, res: Re
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);
 
-  // Enhanced webhook request logging
-  console.log('Raw webhook request received:', {
+  // Enhanced webhook request logging with full details
+  console.log('Webhook request received:', {
     requestId,
     timestamp,
     headers: {
@@ -96,12 +96,23 @@ router.post('/', requestSizeLimit, validateRequest, async (req: Request, res: Re
     },
     body: {
       type: req.body?.type,
-      dataHash: req.body?.data?.hash,
-      dataText: req.body?.data?.text,
-      dataAuthor: req.body?.data?.author?.username,
-      dataMentions: req.body?.data?.mentioned_profiles
+      data: {
+        hash: req.body?.data?.hash,
+        text: req.body?.data?.text,
+        author: {
+          username: req.body?.data?.author?.username,
+          fid: req.body?.data?.author?.fid
+        },
+        mentions: req.body?.data?.mentioned_profiles?.map((p: any) => ({
+          username: p.username,
+          fid: p.fid
+        })),
+        parent_hash: req.body?.data?.parent_hash,
+        thread_hash: req.body?.data?.thread_hash,
+        channel: req.body?.data?.channel
+      }
     },
-    queryParams: req.query
+    rawBody: process.env.NODE_ENV === 'development' ? JSON.stringify(req.body) : undefined
   });
 
   // Enhanced request logging with full details
@@ -142,16 +153,43 @@ router.post('/', requestSizeLimit, validateRequest, async (req: Request, res: Re
       });
     }
 
-    // Development mode allows skipping signature verification
+    // Enhanced signature verification with development mode support
     const isDevelopment = process.env.NODE_ENV !== 'production';
-    let isValid = isDevelopment;
+    let isValid = false;
 
-    if (!isDevelopment) {
-      isValid = verifySignature(
-        JSON.stringify(req.body),
-        signature,
-        process.env.WEBHOOK_SECRET
-      );
+    try {
+      // In development, we'll log the signature details for debugging
+      if (isDevelopment) {
+        const payload = JSON.stringify(req.body);
+        const expectedSignature = crypto
+          .createHmac('sha256', process.env.WEBHOOK_SECRET || '')
+          .update(payload)
+          .digest('hex');
+        
+        console.log('Signature debug:', {
+          received: signature,
+          expected: expectedSignature,
+          matches: signature === expectedSignature,
+          timestamp: new Date().toISOString()
+        });
+        
+        // In development, we'll accept the request even if signatures don't match
+        isValid = true;
+      } else {
+        // In production, strictly verify the signature
+        isValid = verifySignature(
+          JSON.stringify(req.body),
+          signature,
+          process.env.WEBHOOK_SECRET || ''
+        );
+      }
+    } catch (error) {
+      console.error('Signature verification error:', {
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString()
+      });
+      // In development, continue despite errors
+      isValid = isDevelopment;
     }
 
     console.log('Signature verification:', {
