@@ -6,10 +6,10 @@ const router = Router();
 
 // Enhanced logging middleware
 const logRequest = (req: Request, res: Response, next: NextFunction) => {
-  const requestId = Math.random().toString(36).substring(7);
+  const requestId = crypto.randomBytes(4).toString('hex');
   const timestamp = new Date().toISOString();
   
-  console.log('Request received:', {
+  console.log('Webhook request received:', {
     requestId,
     timestamp,
     method: req.method,
@@ -17,9 +17,9 @@ const logRequest = (req: Request, res: Response, next: NextFunction) => {
     headers: {
       'content-type': req.headers['content-type'],
       'x-neynar-signature': req.headers['x-neynar-signature'] ? 
-        (req.headers['x-neynar-signature'] as string).substring(0, 10) + '...' : 'missing'
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
     },
-    body: req.body
+    body: JSON.stringify(req.body).substring(0, 200) + '...'
   });
   
   // Attach requestId for later use
@@ -63,25 +63,41 @@ const validateWebhook = (req: Request, res: Response, next: NextFunction) => {
     return res.status(401).json({ error: 'Missing signature', requestId });
   }
 
-  const payload = JSON.stringify(req.body);
-  const computedSignature = crypto
-    .createHmac('sha256', webhookSecret)
-    .update(payload)
-    .digest('hex');
+  try {
+    const payload = JSON.stringify(req.body);
+    const computedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(payload)
+      .digest('hex');
 
-  if (signature !== computedSignature) {
-    console.error('Invalid webhook signature', {
+    console.log('Signature verification:', {
       requestId,
       timestamp,
-      path: req.path,
-      method: req.method,
-      expectedSignature: computedSignature.substring(0, 10) + '...',
-      receivedSignature: signature.substring(0, 10) + '...'
+      matches: signature === computedSignature,
+      payloadLength: payload.length
     });
-    return res.status(401).json({ error: 'Invalid signature', requestId });
-  }
 
-  next();
+    if (signature !== computedSignature) {
+      console.error('Invalid webhook signature', {
+        requestId,
+        timestamp,
+        path: req.path,
+        method: req.method,
+        expectedSignature: `${computedSignature.substring(0, 10)}...`,
+        receivedSignature: `${signature.substring(0, 10)}...`
+      });
+      return res.status(401).json({ error: 'Invalid signature', requestId });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error verifying signature:', {
+      requestId,
+      timestamp,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return res.status(500).json({ error: 'Signature verification failed', requestId });
+  }
 };
 
 // Health check endpoint
@@ -98,7 +114,7 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // Webhook endpoint
-router.post('/webhook', logRequest, validateWebhook, async (req: Request, res: Response) => {
+router.post('/', logRequest, validateWebhook, async (req: Request, res: Response) => {
   const { requestId, timestamp } = res.locals;
 
   try {
@@ -106,22 +122,31 @@ router.post('/webhook', logRequest, validateWebhook, async (req: Request, res: R
       requestId,
       timestamp,
       type: req.body.type,
-      data: req.body.data
+      text: req.body.data?.text?.substring(0, 100),
+      author: req.body.data?.author?.username
     });
 
-    // Send immediate acknowledgment
+    // Send immediate acknowledgment to prevent timeouts
     res.status(200).json({ status: 'processing', requestId });
 
     // Process webhook asynchronously
     setImmediate(async () => {
       try {
         await handleWebhook(req.body);
-        console.log('Webhook processed successfully:', { requestId, timestamp });
+        console.log('Webhook processed successfully:', { 
+          requestId, 
+          timestamp,
+          type: req.body.type
+        });
       } catch (error) {
         console.error('Error processing webhook:', {
           requestId,
           timestamp,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : String(error)
         });
       }
     });
@@ -129,9 +154,17 @@ router.post('/webhook', logRequest, validateWebhook, async (req: Request, res: R
     console.error('Webhook error:', {
       requestId,
       timestamp,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      } : String(error)
     });
-    res.status(500).json({ error: 'Internal server error', requestId });
+    
+    // Only send error response if headers haven't been sent
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error', requestId });
+    }
   }
 });
 

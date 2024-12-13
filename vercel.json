@@ -4,9 +4,8 @@
     { "src": "api/index.ts", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/index.ts" },
     { 
-      "src": "/webhook",
+      "src": "/api/webhook",
       "methods": ["POST", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
@@ -16,10 +15,8 @@
       },
       "dest": "/api/index.ts"
     },
-    { 
-      "src": "/(.*)",
-      "dest": "/api/index.ts"
-    }
+    { "src": "/api/(.*)", "dest": "/api/index.ts" },
+    { "src": "/(.*)", "dest": "/api/index.ts" }
   ],
   "env": {
     "NEYNAR_API_KEY": "@neynar_api_key",
