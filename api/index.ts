@@ -50,15 +50,16 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Webhook endpoint with enhanced error handling, validation and detailed logging
-app.post(['/', '/webhook'], async (req: Request, res: Response) => {
-  const timestamp = new Date().toISOString();
-  const requestId = Math.random().toString(36).substring(7);
+app.post('/webhook', async (req: Request, res: Response) => {
+  const requestContext = {
+    id: Math.random().toString(36).substring(7),
+    timestamp: new Date().toISOString(),
+    path: req.path,
+    method: req.method
+  };
   
   console.log('Webhook request received:', {
-    requestId,
-    timestamp,
-    path: req.path,
-    method: req.method,
+    ...requestContext,
     hasSignature: !!req.headers['x-neynar-signature'],
     contentType: req.headers['content-type'],
     bodySize: JSON.stringify(req.body).length,
@@ -66,92 +67,91 @@ app.post(['/', '/webhook'], async (req: Request, res: Response) => {
     hasNeynarKey: !!process.env.NEYNAR_API_KEY
   });
 
-  // Enhanced signature verification
-  const signature = req.headers['x-neynar-signature'] as string;
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-  
-  if (!webhookSecret) {
-    console.error('Missing webhook secret:', { requestId, timestamp });
-    return res.status(500).send('Server configuration error');
-  }
-
-  try {
-    const crypto = await import('crypto');
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const rawBody = JSON.stringify(req.body);
-    const computedSignature = hmac.update(rawBody).digest('hex');
-    
-    console.log('Signature verification:', {
-      requestId,
-      timestamp,
-      hasSignature: !!signature,
-      signatureMatch: computedSignature === signature,
-      receivedSignature: signature?.substring(0, 10) + '...',
-      computedSignaturePrefix: computedSignature.substring(0, 10) + '...'
+  // Validate environment configuration
+  if (!process.env.WEBHOOK_SECRET) {
+    console.error('Missing webhook secret:', requestContext);
+    return res.status(500).json({ 
+      error: 'Server configuration error', 
+      details: 'Missing webhook secret'
     });
-
-    if (!signature || computedSignature !== signature) {
-      console.error('Invalid webhook signature:', {
-        requestId,
-        timestamp,
-        path: req.path,
-        receivedSignature: signature?.substring(0, 10) + '...',
-        computedSignature: computedSignature.substring(0, 10) + '...'
-      });
-      return res.status(401).json({ error: 'Invalid signature', details: 'Signature verification failed' });
-    }
-  } catch (error) {
-    console.error('Error verifying signature:', error);
-    return res.status(500).json({ error: 'Internal server error', details: 'Error processing signature' });
   }
 
-  // Check if the payload includes required fields
-  const { type, data } = req.body;
-  if (!type || !data) {
-    console.log('Invalid webhook payload:', { 
-      requestId, 
-      timestamp, 
-      type, 
-      hasData: !!data,
-      receivedFields: Object.keys(req.body)
-    });
-    return res.status(400).send('Missing required fields in request body');
-  }
-
-  // Verify that we have required environment variables
   if (!process.env.OPENAI_API_KEY || !process.env.NEYNAR_API_KEY) {
     console.error('Missing required API keys:', {
-      requestId,
-      timestamp,
+      ...requestContext,
       hasOpenAIKey: !!process.env.OPENAI_API_KEY,
       hasNeynarKey: !!process.env.NEYNAR_API_KEY
     });
-    return res.status(500).send('Server configuration error');
+    return res.status(500).json({ 
+      error: 'Server configuration error', 
+      details: 'Missing required API keys'
+    });
   }
 
-  // Send immediate 200 OK response to acknowledge receipt
-  res.status(200).send('Webhook event processed successfully!');
-
+  // Verify signature
   try {
+    const signature = req.headers['x-neynar-signature'] as string;
+    if (!signature) {
+      console.warn('No signature provided:', requestContext);
+      return res.status(401).json({ 
+        error: 'Unauthorized', 
+        details: 'Missing signature header'
+      });
+    }
+
+    const rawBody = JSON.stringify(req.body);
+    const crypto = await import('crypto');
+    const computedSignature = crypto
+      .createHmac('sha256', process.env.WEBHOOK_SECRET)
+      .update(rawBody)
+      .digest('hex');
+    
+    if (computedSignature !== signature) {
+      console.error('Invalid signature:', {
+        ...requestContext,
+        receivedSignature: signature.substring(0, 10) + '...',
+        computedSignature: computedSignature.substring(0, 10) + '...'
+      });
+      return res.status(401).json({ 
+        error: 'Unauthorized', 
+        details: 'Invalid signature'
+      });
+    }
+
+    // Validate payload
+    const { type, data } = req.body;
+    if (!type || !data) {
+      console.warn('Invalid payload:', { 
+        ...requestContext,
+        receivedFields: Object.keys(req.body)
+      });
+      return res.status(400).json({ 
+        error: 'Bad Request', 
+        details: 'Missing required fields'
+      });
+    }
+
+    // Process webhook event
     if (type === 'cast.created' && data.text) {
       const startTime = Date.now();
-      console.log('Processing cast:', {
-        requestId,
-        timestamp,
+      console.log('Valid cast event received:', {
+        ...requestContext,
         text: data.text,
         hash: data.hash,
         author: data.author?.username,
-        isMention: data.text.toLowerCase().includes('@mienfoo.eth'),
-        hasThreadHash: !!data.thread_hash,
-        hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-        processingStart: new Date().toISOString()
+        isMention: data.text.toLowerCase().includes('@mienfoo.eth')
       });
 
-      // Process webhook asynchronously
+      // Send immediate acknowledgment
+      res.status(200).json({ 
+        message: 'Webhook received and validated', 
+        status: 'processing'
+      });
+
+      // Process asynchronously
       setImmediate(async () => {
         try {
           const { handleWebhook } = await import('./bot/handlers');
-          
           await handleWebhook({
             type: 'cast.created',
             data: {
@@ -163,53 +163,46 @@ app.post(['/', '/webhook'], async (req: Request, res: Response) => {
             }
           });
 
-          console.log('Cast processing completed:', {
-            requestId,
-            timestamp,
+          console.log('Cast processed successfully:', {
+            ...requestContext,
             hash: data.hash,
-            processingTimeMs: Date.now() - startTime,
-            success: true
+            processingTimeMs: Date.now() - startTime
           });
         } catch (error) {
-          console.error('Error in async webhook processing:', {
-            requestId,
-            timestamp,
+          console.error('Cast processing failed:', {
+            ...requestContext,
+            hash: data.hash,
             error: error instanceof Error ? {
               name: error.name,
               message: error.message,
               stack: error.stack
-            } : error,
-            data: {
-              hash: data.hash,
-              hasText: !!data.text,
-              hasAuthor: !!data.author
-            }
+            } : error
           });
         }
       });
     } else {
-      console.log('Skipping non-cast or empty text event:', {
-        requestId,
-        timestamp,
+      console.log('Skipping non-cast event:', {
+        ...requestContext,
         type,
         hasText: !!data?.text
       });
+      return res.status(200).json({ 
+        message: 'Non-cast event acknowledged', 
+        status: 'skipped'
+      });
     }
   } catch (error) {
-    console.error('Error in webhook handler:', {
-      requestId,
-      timestamp,
+    console.error('Webhook processing error:', {
+      ...requestContext,
       error: error instanceof Error ? {
         name: error.name,
         message: error.message,
         stack: error.stack
-      } : error,
-      type,
-      data: {
-        hash: data.hash,
-        hasText: !!data.text,
-        hasAuthor: !!data.author
-      }
+      } : error
+    });
+    return res.status(500).json({ 
+      error: 'Internal Server Error',
+      details: 'Error processing webhook'
     });
   }
 });
