@@ -4,44 +4,80 @@ import { handleWebhook } from '../bot/handlers';
 
 const router = Router();
 
-// Enhanced logging middleware
+// Request logging middleware with rate limiting
+const requestsInWindow = new Map<string, number>();
+const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
+const MAX_REQUESTS = 100;
+
 const logRequest = (req: Request, res: Response, next: NextFunction) => {
   const requestId = crypto.randomBytes(4).toString('hex');
   const timestamp = new Date().toISOString();
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  
+  // Rate limiting
+  const currentRequests = requestsInWindow.get(clientIp) || 0;
+  if (currentRequests >= MAX_REQUESTS) {
+    console.warn('Rate limit exceeded:', { clientIp, requestId, timestamp });
+    return res.status(429).json({ 
+      error: 'Too many requests',
+      retryAfter: Math.ceil(RATE_LIMIT_WINDOW / 1000)
+    });
+  }
+  requestsInWindow.set(clientIp, currentRequests + 1);
   
   console.log('Webhook request received:', {
     requestId,
     timestamp,
     method: req.method,
     path: req.path,
+    clientIp,
     headers: {
       'content-type': req.headers['content-type'],
       'x-neynar-signature': req.headers['x-neynar-signature'] ? 
         `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
     },
-    body: JSON.stringify(req.body).substring(0, 200) + '...'
+    bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) + '...' : 'empty'
   });
   
-  // Attach requestId for later use
   res.locals.requestId = requestId;
   res.locals.timestamp = timestamp;
+  res.locals.clientIp = clientIp;
   next();
 };
 
-// Middleware to validate webhook requests
-const validateWebhook = (req: Request, res: Response, next: NextFunction) => {
-  const { requestId, timestamp } = res.locals;
+// Clean up rate limiting window periodically
+setInterval(() => {
+  requestsInWindow.clear();
+}, RATE_LIMIT_WINDOW);
 
-  // Ensure request has the required content type
-  if (req.headers['content-type'] !== 'application/json') {
+// Webhook validation middleware
+const validateWebhook = (req: Request, res: Response, next: NextFunction) => {
+  const { requestId, timestamp, clientIp } = res.locals;
+
+  // Validate content type
+  if (!req.headers['content-type']?.includes('application/json')) {
     console.error('Invalid content type', {
       requestId,
       timestamp,
-      contentType: req.headers['content-type'],
-      path: req.path,
-      method: req.method
+      clientIp,
+      contentType: req.headers['content-type']
     });
-    return res.status(400).json({ error: 'Invalid content type', requestId });
+    return res.status(400).json({ 
+      error: 'Invalid content type',
+      expected: 'application/json',
+      received: req.headers['content-type']
+    });
+  }
+
+  // Validate request body
+  if (!req.body || typeof req.body !== 'object') {
+    console.error('Invalid request body', {
+      requestId,
+      timestamp,
+      clientIp,
+      body: req.body
+    });
+    return res.status(400).json({ error: 'Invalid request body' });
   }
 
   // Verify Neynar signature
@@ -49,18 +85,17 @@ const validateWebhook = (req: Request, res: Response, next: NextFunction) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (!webhookSecret) {
-    console.error('Webhook secret not configured', { requestId, timestamp });
-    return res.status(500).json({ error: 'Server configuration error', requestId });
+    console.error('Missing webhook secret', { requestId, timestamp });
+    return res.status(500).json({ error: 'Server configuration error' });
   }
 
   if (!signature) {
-    console.error('No signature provided', {
+    console.error('Missing signature header', {
       requestId,
       timestamp,
-      path: req.path,
-      method: req.method
+      clientIp
     });
-    return res.status(401).json({ error: 'Missing signature', requestId });
+    return res.status(401).json({ error: 'Missing signature header' });
   }
 
   try {
@@ -70,33 +105,31 @@ const validateWebhook = (req: Request, res: Response, next: NextFunction) => {
       .update(payload)
       .digest('hex');
 
-    console.log('Signature verification:', {
-      requestId,
-      timestamp,
-      matches: signature === computedSignature,
-      payloadLength: payload.length
-    });
-
     if (signature !== computedSignature) {
-      console.error('Invalid webhook signature', {
+      console.error('Invalid signature', {
         requestId,
         timestamp,
-        path: req.path,
-        method: req.method,
+        clientIp,
         expectedSignature: `${computedSignature.substring(0, 10)}...`,
         receivedSignature: `${signature.substring(0, 10)}...`
       });
-      return res.status(401).json({ error: 'Invalid signature', requestId });
+      return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    next();
-  } catch (error) {
-    console.error('Error verifying signature:', {
+    console.log('Signature verified', {
       requestId,
       timestamp,
+      clientIp
+    });
+    next();
+  } catch (error) {
+    console.error('Signature verification error', {
+      requestId,
+      timestamp,
+      clientIp,
       error: error instanceof Error ? error.message : String(error)
     });
-    return res.status(500).json({ error: 'Signature verification failed', requestId });
+    return res.status(500).json({ error: 'Signature verification failed' });
   }
 };
 
@@ -114,20 +147,24 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // Webhook endpoint
-router.post('/', logRequest, validateWebhook, async (req: Request, res: Response) => {
-  const { requestId, timestamp } = res.locals;
+router.post('/', logRequest, express.json(), validateWebhook, async (req: Request, res: Response) => {
+  const { requestId, timestamp, clientIp } = res.locals;
 
   try {
     console.log('Processing webhook:', {
       requestId,
       timestamp,
+      clientIp,
       type: req.body.type,
       text: req.body.data?.text?.substring(0, 100),
       author: req.body.data?.author?.username
     });
 
-    // Send immediate acknowledgment to prevent timeouts
-    res.status(200).json({ status: 'processing', requestId });
+    // Send immediate acknowledgment
+    res.status(202).json({ 
+      status: 'accepted',
+      message: 'Webhook received and being processed'
+    });
 
     // Process webhook asynchronously
     setImmediate(async () => {
@@ -139,7 +176,7 @@ router.post('/', logRequest, validateWebhook, async (req: Request, res: Response
           type: req.body.type
         });
       } catch (error) {
-        console.error('Error processing webhook:', {
+        console.error('Webhook processing error:', {
           requestId,
           timestamp,
           error: error instanceof Error ? {
@@ -151,9 +188,10 @@ router.post('/', logRequest, validateWebhook, async (req: Request, res: Response
       }
     });
   } catch (error) {
-    console.error('Webhook error:', {
+    console.error('Webhook handler error:', {
       requestId,
       timestamp,
+      clientIp,
       error: error instanceof Error ? {
         name: error.name,
         message: error.message,
@@ -161,20 +199,15 @@ router.post('/', logRequest, validateWebhook, async (req: Request, res: Response
       } : String(error)
     });
     
-    // Only send error response if headers haven't been sent
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Internal server error', requestId });
+      res.status(500).json({ 
+        error: 'Internal server error',
+        message: process.env.NODE_ENV === 'development' ? 
+          error instanceof Error ? error.message : String(error) : 
+          'An unexpected error occurred'
+      });
     }
   }
-});
-
-// Catch-all for unsupported methods
-router.all('/webhook', (req: Request, res: Response) => {
-  console.warn('Unsupported method for webhook endpoint', {
-    method: req.method,
-    path: req.path
-  });
-  res.status(405).json({ error: 'Method not allowed' });
 });
 
 export default router;
