@@ -55,7 +55,32 @@ const errorHandler = (error: Error, req: Request, res: Response) => {
   }
 };
 
-router.post('/', requestSizeLimit, async (req: Request, res: Response) => {
+// Production-ready rate limit error handler
+const productionRateLimitHandler = (req: Request, res: Response) => {
+  console.warn('Rate limit exceeded:', {
+    ip: req.ip,
+    path: req.path,
+    timestamp: new Date().toISOString()
+  });
+  return res.status(429).json({
+    error: 'Too many requests',
+    retryAfter: '15m',
+    code: 'RATE_LIMIT_EXCEEDED'
+  });
+};
+
+// Production request validation
+const validateRequest = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({
+      error: 'Invalid request body',
+      code: 'INVALID_PAYLOAD'
+    });
+  }
+  next();
+};
+
+router.post('/', requestSizeLimit, validateRequest, async (req: Request, res: Response) => {
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);
 

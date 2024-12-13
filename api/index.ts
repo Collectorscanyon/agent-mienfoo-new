@@ -109,11 +109,21 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Root health check endpoint
+// Enhanced health check endpoint for production monitoring
 app.get('/', (_req: Request, res: Response) => {
+  const startTime = process.uptime();
+  const memory = process.memoryUsage();
+  
   res.json({ 
     status: 'ok', 
     message: 'Bot API is running',
+    uptime: `${Math.floor(startTime / 60)} minutes`,
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    memory: {
+      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`,
+      heapTotal: `${Math.round(memory.heapTotal / 1024 / 1024)}MB`,
+    },
     config: {
       hasOpenAIKey: !!process.env.OPENAI_API_KEY,
       hasNeynarKey: !!process.env.NEYNAR_API_KEY,
@@ -122,6 +132,16 @@ app.get('/', (_req: Request, res: Response) => {
     }
   });
 });
+
+// Production CORS configuration
+if (process.env.NODE_ENV === 'production') {
+  app.use(cors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['https://*.vercel.app'],
+    methods: ['POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'x-neynar-signature'],
+    maxAge: 86400
+  }));
+}
 
 // Register webhook routes with enhanced logging
 console.log('Registering webhook routes...');
