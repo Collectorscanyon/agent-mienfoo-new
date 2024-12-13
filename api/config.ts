@@ -2,12 +2,16 @@ import { z } from 'zod';
 
 // Environment validation schema with detailed error messages
 const envSchema = z.object({
-  NEYNAR_API_KEY: z.string().min(1, 'NEYNAR_API_KEY is required'),
-  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
-  WEBHOOK_SECRET: z.string().min(1, 'WEBHOOK_SECRET is required'),
-  SIGNER_UUID: z.string().min(1, 'SIGNER_UUID is required'),
-  BOT_USERNAME: z.string().default('mienfoo.eth'),
-  BOT_FID: z.string().default('834885'),
+  NEYNAR_API_KEY: z.string().min(1, 'NEYNAR_API_KEY is required for Farcaster API access'),
+  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required for generating responses'),
+  WEBHOOK_SECRET: z.string().min(1, 'WEBHOOK_SECRET is required for verifying webhook signatures'),
+  SIGNER_UUID: z.string().min(1, 'SIGNER_UUID is required for authenticating with Neynar'),
+  BOT_USERNAME: z.string().default('mienfoo.eth').refine(val => val.includes('.eth'), {
+    message: 'BOT_USERNAME must be a valid .eth name'
+  }),
+  BOT_FID: z.string().default('834885').refine(val => !isNaN(Number(val)), {
+    message: 'BOT_FID must be a valid Farcaster ID number'
+  }),
   NODE_ENV: z.enum(['development', 'production']).default('development'),
   VERCEL_URL: z.string().optional(),
   VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
