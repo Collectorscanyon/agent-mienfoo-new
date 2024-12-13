@@ -1,11 +1,36 @@
 import express from 'express';
 import cors from 'cors';
-import { configureRoutes } from './api/routes';
-import { logger } from './utils/logger';
-import { config } from './config/environment';
+import dotenv from 'dotenv';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import OpenAI from 'openai';
+import crypto from 'crypto';
+import webhookRouter from './routes/webhook';
+
+// Initialize environment
+dotenv.config();
+
+// Verify required environment variables
+const requiredVars = [
+  'NEYNAR_API_KEY',
+  'OPENAI_API_KEY',
+  'BOT_USERNAME',
+  'BOT_FID',
+  'WEBHOOK_SECRET',
+  'SIGNER_UUID'
+];
+
+const missingVars = requiredVars.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+}
+
+// Initialize API clients
+console.log('Initializing API clients...');
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY!);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const app = express();
-const port = parseInt(config.PORT.toString(), 10);
+const port = parseInt(process.env.PORT || '5000', 10);
 
 // Configure middleware
 app.use(cors());
@@ -14,7 +39,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Enhanced request logging
 app.use((req, res, next) => {
-  logger.info('Incoming request:', {
+  const requestId = crypto.randomBytes(4).toString('hex');
+  console.log('Incoming request:', {
+    requestId,
     timestamp: new Date().toISOString(),
     method: req.method,
     path: req.path,
@@ -27,10 +54,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Configure routes
-logger.info('Registering webhook routes...');
-configureRoutes(app);
-
 // Health check endpoint
 app.get('/', (_req, res) => {
   res.json({
@@ -39,27 +62,87 @@ app.get('/', (_req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
     config: {
-      hasNeynarKey: !!config.NEYNAR_API_KEY,
-      hasSignerUuid: !!config.SIGNER_UUID,
-      hasOpenAIKey: !!config.OPENAI_API_KEY,
-      hasWebhookSecret: !!config.WEBHOOK_SECRET
+      hasNeynarKey: !!process.env.NEYNAR_API_KEY,
+      hasSignerUuid: !!process.env.SIGNER_UUID,
+      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+      hasWebhookSecret: !!process.env.WEBHOOK_SECRET
     }
   });
 });
 
-// Start server
-app.listen(port, '0.0.0.0', () => {
-  logger.info('Server started successfully:', {
-    timestamp: new Date().toISOString(),
-    port,
-    environment: process.env.NODE_ENV,
-    config: {
-      username: config.BOT_USERNAME,
-      fid: config.BOT_FID,
-      hasNeynarKey: !!config.NEYNAR_API_KEY,
-      hasSignerUuid: !!config.SIGNER_UUID,
-      hasOpenAIKey: !!config.OPENAI_API_KEY,
-      hasWebhookSecret: !!config.WEBHOOK_SECRET
-    }
-  });
+// Register webhook routes
+console.log('Registering webhook routes...');
+app.use('/api/webhook', webhookRouter);
+
+console.log('Webhook route registered at /api/webhook', {
+  timestamp: new Date().toISOString(),
+  environment: process.env.NODE_ENV || 'development'
 });
+
+// Helper function to find an available port
+async function findAvailablePort(startPort: number): Promise<number> {
+  const testServer = express();
+  
+  return new Promise((resolve, reject) => {
+    testServer.listen(startPort, '0.0.0.0')
+      .on('listening', function() {
+        const port = (this.address() as any).port;
+        testServer.close(() => resolve(port));
+      })
+      .on('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          findAvailablePort(startPort + 1).then(resolve, reject);
+        } else {
+          reject(err);
+        }
+      });
+  });
+}
+
+// Start server with port conflict handling
+async function startServer() {
+  try {
+    const availablePort = await findAvailablePort(port);
+    const server = app.listen(availablePort, '0.0.0.0', () => {
+      console.log('Server started successfully:', {
+        timestamp: new Date().toISOString(),
+        port: availablePort,
+        environment: process.env.NODE_ENV,
+        config: {
+          username: process.env.BOT_USERNAME,
+          fid: process.env.BOT_FID,
+          hasNeynarKey: !!process.env.NEYNAR_API_KEY,
+          hasSignerUuid: !!process.env.SIGNER_UUID,
+          hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+          hasWebhookSecret: !!process.env.WEBHOOK_SECRET
+        }
+      });
+    });
+
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+      console.log('SIGTERM received. Shutting down gracefully...');
+      server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+      });
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled Rejection at:', {
+        promise,
+        reason,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+  } catch (error) {
+    console.error('Failed to start server:', {
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString()
+    });
+    process.exit(1);
+  }
+}
+
+startServer();

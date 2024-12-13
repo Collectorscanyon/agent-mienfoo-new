@@ -15,7 +15,15 @@ PAYLOAD='{
     "author": {
       "username": "test_user",
       "fid": "123456"
-    }
+    },
+    "thread_hash": "thread123",
+    "parent_hash": null,
+    "mentioned_profiles": [
+      {
+        "username": "mienfoo.eth",
+        "fid": "834885"
+      }
+    ]
   }
 }'
 
@@ -39,7 +47,7 @@ echo "Signature: ${SIGNATURE:0:10}..." # Only show first 10 chars for security
 
 # Test the health endpoint first
 echo -e "\nTesting health endpoint..."
-curl -s "http://localhost:5000/api/webhook" | jq '.' || echo "Health check failed"
+curl -s "http://localhost:5000/" | jq '.' || echo "Health check failed"
 
 # Send the webhook request
 echo -e "\nSending webhook POST request..."
