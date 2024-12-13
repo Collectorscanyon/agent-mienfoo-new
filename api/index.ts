@@ -9,52 +9,71 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
-// Configure body parsing middleware before routes
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Configure body parsing middleware first
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Basic request logging
+// Request logging middleware
 app.use((req, res, next) => {
-  console.log('Incoming request:', {
+  console.log('Request received:', {
     timestamp: new Date().toISOString(),
     method: req.method,
     path: req.path,
-    contentType: req.headers['content-type'],
+    headers: {
+      'content-type': req.headers['content-type'],
+      'content-length': req.headers['content-length']
+    },
     body: req.body
   });
   next();
 });
 
 // Health check endpoint
-app.get(['/', '/health'], (req, res) => {
+app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Bot API is running' });
 });
 
-// Webhook endpoint
-app.post('/webhook', (req, res) => {
-  console.log('Webhook received:', {
-    timestamp: new Date().toISOString(),
+// Webhook endpoint with explicit logging
+app.post('/webhook', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  
+  console.log('Webhook request received:', {
+    timestamp,
+    path: '/webhook',
+    headers: req.headers,
     body: req.body
   });
 
-  if (!req.body) {
-    console.log('No request body received');
-    return res.status(400).json({ error: 'No request body' });
+  // Validate request body
+  if (!req.body || !req.body.type || !req.body.data) {
+    console.log('Invalid webhook payload:', { timestamp, body: req.body });
+    return res.status(400).json({ 
+      error: 'Invalid webhook payload',
+      timestamp 
+    });
   }
 
   // Send immediate 200 OK response
   res.status(200).send('OK');
 
-  // Process webhook asynchronously if it's a valid cast
-  if (req.body.type === 'cast.created' && req.body.data) {
-    handleWebhook(req.body).catch(error => {
-      console.error('Webhook processing error:', error);
+  try {
+    // Process webhook asynchronously
+    await handleWebhook(req.body);
+    console.log('Webhook processed successfully:', {
+      timestamp,
+      type: req.body.type
+    });
+  } catch (error) {
+    console.error('Error processing webhook:', {
+      timestamp,
+      error: error instanceof Error ? error.message : error,
+      body: req.body
     });
   }
 });
 
 // Vercel serverless handler
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default function handler(req: VercelRequest, res: VercelResponse) {
   return new Promise((resolve, reject) => {
     app(req, res, (err) => {
       if (err) {
