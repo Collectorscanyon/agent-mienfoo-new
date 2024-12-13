@@ -1,0 +1,118 @@
+import express from 'express';
+import { Router } from 'express';
+import crypto from 'crypto';
+import morgan from 'morgan';
+import cors from 'cors';
+
+const app = express();
+const router = Router();
+
+// Middleware
+app.use(express.json());
+app.use(morgan('dev'));
+app.use(cors());
+
+// Basic health check endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// Webhook validation middleware
+const validateWebhook = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Log incoming request
+  console.log('Webhook request received:', {
+    requestId: crypto.randomBytes(4).toString('hex'),
+    timestamp: new Date().toISOString(),
+    method: req.method,
+    path: req.path,
+    headers: req.headers,
+    body: req.body
+  });
+
+  // Verify content type
+  if (req.headers['content-type'] !== 'application/json') {
+    return res.status(400).json({ 
+      error: 'Invalid content type',
+      expected: 'application/json',
+      received: req.headers['content-type']
+    });
+  }
+
+  // Verify Neynar signature if present
+  const signature = req.headers['x-neynar-signature'];
+  if (process.env.WEBHOOK_SECRET && signature) {
+    try {
+      const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+      const digest = hmac.update(JSON.stringify(req.body)).digest('hex');
+      
+      if (signature !== `sha256=${digest}`) {
+        console.error('Invalid webhook signature', {
+          path: req.path,
+          method: req.method
+        });
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    } catch (error) {
+      console.error('Error validating signature:', error);
+      return res.status(500).json({ error: 'Signature validation failed' });
+    }
+  }
+
+  next();
+};
+
+// Webhook handler
+router.post('/webhook', validateWebhook, async (req, res) => {
+  try {
+    const { type, data } = req.body;
+    
+    console.log('Processing webhook:', {
+      type,
+      data,
+      timestamp: new Date().toISOString()
+    });
+
+    // Handle webhook based on type
+    switch (type) {
+      case 'cast.mentioned':
+        // Handle mention event
+        await handleMention(data);
+        break;
+      default:
+        console.warn('Unknown event type:', type);
+    }
+
+    res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Mount the webhook router
+app.use('/api', router);
+
+// Error handler
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log('Server started successfully:', {
+    timestamp: new Date().toISOString(),
+    port: PORT,
+    environment: process.env.NODE_ENV,
+    botConfig: {
+      username: process.env.BOT_USERNAME,
+      fid: process.env.BOT_FID,
+      hasNeynarKey: Boolean(process.env.NEYNAR_API_KEY),
+      hasSignerUuid: Boolean(process.env.SIGNER_UUID),
+      hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY)
+    }
+  });
+});
+
+export default app;
