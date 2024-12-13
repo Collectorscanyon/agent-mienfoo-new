@@ -31,18 +31,33 @@ app.use((req, res, next) => {
 // Initialize API clients
 logger.info('Initializing API clients...');
 
-// Initialize Neynar client
-const neynarConfig = new Configuration({
-  apiKey: config.NEYNAR_API_KEY,
-  baseOptions: {
-    headers: {
-      "x-neynar-api-version": "v2"
+// Initialize Neynar client with v2 configuration
+try {
+  const neynarConfig = new Configuration({
+    apiKey: config.NEYNAR_API_KEY,
+    baseOptions: {
+      headers: {
+        "x-neynar-api-version": "v2",
+        "accept": "application/json",
+      },
     },
-  },
-});
+  });
 
-const neynar = new NeynarAPIClient(neynarConfig);
+  const neynar = new NeynarAPIClient(neynarConfig);
+  logger.info('Neynar client initialized successfully:', {
+    timestamp: new Date().toISOString(),
+    hasApiKey: !!config.NEYNAR_API_KEY,
+    hasSignerUuid: !!config.SIGNER_UUID,
+    hasBotConfig: !!(config.BOT_USERNAME && config.BOT_FID)
+  });
+} catch (error) {
+  logger.error('Failed to initialize Neynar client:', error);
+  throw error;
+}
+
+// Initialize OpenAI client
 const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+logger.info('OpenAI client initialized successfully');
 
 // Health check endpoint
 app.get('/', (_req, res) => {
