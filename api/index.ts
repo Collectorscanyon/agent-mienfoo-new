@@ -32,30 +32,150 @@ app.get('/', (req: Request, res: Response) => {
 
 // Webhook endpoint
 app.post('/webhook', async (req: Request, res: Response) => {
-  console.log('Webhook endpoint hit with body:', req.body);
+  const timestamp = new Date().toISOString();
+  const requestId = Math.random().toString(36).substring(7);
+  
+  console.log('Webhook received:', {
+    requestId,
+    timestamp,
+    method: req.method,
+    path: req.path,
+    body: req.body
+  });
 
   // Check if the payload includes required fields
   const { type, data } = req.body;
   if (!type || !data) {
-    console.log('No "type" or "data" field found in the request body.');
+    console.log('Invalid webhook payload:', { requestId, timestamp, type, hasData: !!data });
     return res.status(400).send('Missing required fields in request body');
   }
 
-  // Send immediate 200 OK response
+  // Send immediate 200 OK response to acknowledge receipt
   res.status(200).send('Webhook event processed successfully!');
 
   try {
-    // Process webhook asynchronously
-    await handleWebhook({ type, data });
-    console.log('Webhook processed successfully:', {
-      timestamp: new Date().toISOString(),
-      type,
-      data
-    });
+    if (type === 'cast.created' && data.text) {
+      console.log('Processing cast:', {
+        requestId,
+        timestamp,
+        text: data.text,
+        hash: data.hash,
+        author: data.author?.username
+      });
+
+      // Enhanced bot mention detection with username verification
+      const botMentions = ['@mienfoo.eth'];
+      if (process.env.BOT_USERNAME) {
+        botMentions.push(`@${process.env.BOT_USERNAME}`);
+      }
+      
+      const isBotMentioned = botMentions.some(mention => 
+        data.text.toLowerCase().includes(mention.toLowerCase())
+      );
+      
+      console.log('Mention detection:', {
+        requestId,
+        timestamp,
+        isBotMentioned,
+        botMentions,
+        text: data.text
+      });
+      
+      if (isBotMentioned) {
+        console.log('Bot mention detected:', {
+          requestId,
+          timestamp,
+          castHash: data.hash,
+          author: data.author?.username
+        });
+
+        // Clean the message text by removing mentions
+        const cleanedText = data.text.replace(/@[\w.]+/g, '').trim();
+        console.log('Cleaned message:', {
+          requestId,
+          timestamp,
+          original: data.text,
+          cleaned: cleanedText
+        });
+        
+        try {
+          // Import and generate response using OpenAI
+          const { generateBotResponse } = await import('./bot/openai');
+          console.log('Calling OpenAI API:', {
+            requestId,
+            timestamp,
+            prompt: cleanedText
+          });
+          
+          const response = await generateBotResponse(cleanedText);
+          console.log('OpenAI response received:', {
+            requestId,
+            timestamp,
+            response
+          });
+          
+          if (!response) {
+            throw new Error('No response received from OpenAI');
+          }
+          
+          // Format the full reply text
+          const replyText = `@${data.author?.username || 'user'} ${response}`;
+          console.log('Prepared reply:', {
+            requestId,
+            timestamp,
+            castHash: data.hash,
+            replyText
+          });
+
+          // Import and use handler to send reply
+          const { handleWebhook } = await import('./bot/handlers');
+          await handleWebhook({
+            type: 'reply',
+            data: {
+              parentHash: data.hash,
+              text: replyText,
+              author: data.author
+            }
+          });
+          
+          console.log('Reply sent successfully:', {
+            requestId,
+            timestamp,
+            parentHash: data.hash,
+            replyText
+          });
+          
+        } catch (error) {
+          console.error('Error in response generation:', {
+            requestId,
+            timestamp,
+            error: error instanceof Error ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack
+            } : error,
+            castHash: data.hash,
+            cleanedText
+          });
+        }
+      } else {
+        console.log('No bot mention detected:', {
+          requestId,
+          timestamp,
+          castHash: data.hash,
+          text: data.text
+        });
+      }
+    }
   } catch (error) {
     console.error('Error processing webhook:', {
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : error,
+      requestId,
+      timestamp,
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      } : error,
       type,
       data
     });

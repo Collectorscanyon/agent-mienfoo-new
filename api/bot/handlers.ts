@@ -29,34 +29,66 @@ function isBotMessage(cast: any): boolean {
 }
 
 export async function handleWebhook(event: any) {
+    const timestamp = new Date().toISOString();
     try {
+        console.log('Processing webhook event:', {
+            timestamp,
+            eventType: event.type,
+            hasData: !!event.data
+        });
+
         const { type, data: cast } = event;
         
         // Early validation
         if (!type || !cast || type !== 'cast.created' || !cast.hash) {
-            console.log('Invalid webhook payload:', { type, hasData: !!cast });
+            console.log('Invalid webhook payload:', { timestamp, type, hasData: !!cast });
             return;
         }
 
-        const data = cast;
-
         // Deduplication check
         if (processedCastHashes.has(cast.hash)) {
-            console.log('Skipping duplicate cast:', cast.hash);
+            console.log('Skipping duplicate cast:', {
+                timestamp,
+                castHash: cast.hash,
+                text: cast.text
+            });
             return;
         }
 
         // Track processed cast
         processedCastHashes.add(cast.hash);
+        console.log('Added cast to processed set:', {
+            timestamp,
+            castHash: cast.hash,
+            setSize: processedCastHashes.size
+        });
 
-        // Check for bot mentions
-        const isMentioned = (
-            cast.mentions?.some((m: any) => m.fid?.toString() === process.env.BOT_FID) ||
-            cast.text?.toLowerCase().includes(`@${process.env.BOT_USERNAME?.toLowerCase()}`) ||
-            cast.text?.toLowerCase().includes('@mienfoo.eth')
+        // Check for bot mentions with enhanced logging
+        const botMentions = [
+            '@mienfoo.eth',
+            `@${process.env.BOT_USERNAME}`
+        ];
+        
+        const isMentioned = botMentions.some(mention => 
+            cast.text?.toLowerCase().includes(mention.toLowerCase())
         );
 
+        console.log('Mention detection:', {
+            timestamp,
+            castHash: cast.hash,
+            text: cast.text,
+            isMentioned,
+            isBot: isBotMessage(cast)
+        });
+
         if (isMentioned && !isBotMessage(cast)) {
+            console.log('Processing mention:', {
+                timestamp,
+                castHash: cast.hash,
+                author: cast.author?.username,
+                text: cast.text
+            });
+
             // Like the mention
             try {
                 await neynar.publishReaction({
@@ -64,24 +96,68 @@ export async function handleWebhook(event: any) {
                     reactionType: 'like',
                     target: cast.hash,
                 });
+                console.log('Successfully liked cast:', {
+                    timestamp,
+                    castHash: cast.hash
+                });
             } catch (error) {
-                console.error('Error liking cast:', error);
+                console.error('Error liking cast:', {
+                    timestamp,
+                    castHash: cast.hash,
+                    error: error instanceof Error ? error.message : error
+                });
             }
 
-            // Generate and send response
-            const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
-            const response = await generateBotResponse(cleanedMessage);
-            
-            // Reply to the mention
-            const replyText = `@${cast.author.username} ${response}`;
-            await neynar.publishCast({
-                signerUuid: process.env.SIGNER_UUID || '',
-                text: replyText,
-                parent: cast.hash,
-                channelId: "collectorscanyon"
-            });
+            try {
+                // Clean message and generate response
+                const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+                console.log('Generating response for:', {
+                    timestamp,
+                    castHash: cast.hash,
+                    originalText: cast.text,
+                    cleanedMessage
+                });
+
+                const response = await generateBotResponse(cleanedMessage);
+                console.log('Generated response:', {
+                    timestamp,
+                    castHash: cast.hash,
+                    response
+                });
+
+                // Format and send reply
+                const replyText = `@${cast.author.username} ${response}`;
+                console.log('Sending reply:', {
+                    timestamp,
+                    castHash: cast.hash,
+                    replyText
+                });
+
+                await neynar.publishCast({
+                    signerUuid: process.env.SIGNER_UUID || '',
+                    text: replyText,
+                    parent: cast.hash,
+                    channelId: "collectorscanyon"
+                });
+
+                console.log('Reply sent successfully:', {
+                    timestamp,
+                    castHash: cast.hash,
+                    parentHash: cast.hash
+                });
+            } catch (error) {
+                console.error('Error in response generation or reply:', {
+                    timestamp,
+                    castHash: cast.hash,
+                    error: error instanceof Error ? error.message : error
+                });
+            }
         }
     } catch (error) {
-        console.error('Error in webhook handler:', error);
+        console.error('Error in webhook handler:', {
+            timestamp,
+            error: error instanceof Error ? error.message : error,
+            event
+        });
     }
 }
