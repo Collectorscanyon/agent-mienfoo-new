@@ -1,44 +1,48 @@
 
 {
   "version": 2,
+  "buildCommand": "cd api && node build.js",
+  "outputDirectory": "api/dist",
+  "devCommand": "npm run dev",
   "functions": {
     "api/*.ts": {
       "memory": 1024,
-      "maxDuration": 10
+      "maxDuration": 30
     }
   },
   "builds": [
     {
       "src": "api/*.ts",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["api/**"]
+      }
     }
   ],
   "routes": [
     {
-      "src": "/webhook",
+      "src": "/api/webhook",
       "methods": ["POST", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
         "Access-Control-Max-Age": "86400"
-      },
-      "dest": "/api/webhook"
+      }
     },
     {
-      "src": "/health",
+      "src": "/api/health",
       "methods": ["GET", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Cache-Control": "s-maxage=30, stale-while-revalidate"
-      },
-      "dest": "/api/health"
+      }
     },
     {
-      "src": "/(.*)",
-      "dest": "/api/index"
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
     }
   ],
   "env": {
