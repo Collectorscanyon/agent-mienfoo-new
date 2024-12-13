@@ -40,14 +40,34 @@ app.post('/webhook', async (req: Request, res: Response) => {
     timestamp,
     method: req.method,
     path: req.path,
-    body: req.body
+    headers: req.headers,
+    body: req.body,
+    hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+    hasNeynarKey: !!process.env.NEYNAR_API_KEY
   });
 
   // Check if the payload includes required fields
   const { type, data } = req.body;
   if (!type || !data) {
-    console.log('Invalid webhook payload:', { requestId, timestamp, type, hasData: !!data });
+    console.log('Invalid webhook payload:', { 
+      requestId, 
+      timestamp, 
+      type, 
+      hasData: !!data,
+      receivedFields: Object.keys(req.body)
+    });
     return res.status(400).send('Missing required fields in request body');
+  }
+
+  // Verify that we have required environment variables
+  if (!process.env.OPENAI_API_KEY || !process.env.NEYNAR_API_KEY) {
+    console.error('Missing required API keys:', {
+      requestId,
+      timestamp,
+      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+      hasNeynarKey: !!process.env.NEYNAR_API_KEY
+    });
+    return res.status(500).send('Server configuration error');
   }
 
   // Send immediate 200 OK response to acknowledge receipt
@@ -60,112 +80,40 @@ app.post('/webhook', async (req: Request, res: Response) => {
         timestamp,
         text: data.text,
         hash: data.hash,
-        author: data.author?.username
+        author: data.author?.username,
+        isMention: data.text.toLowerCase().includes('@mienfoo.eth'),
+        hasThreadHash: !!data.thread_hash
       });
 
-      // Enhanced bot mention detection with username verification
-      const botMentions = ['@mienfoo.eth'];
-      if (process.env.BOT_USERNAME) {
-        botMentions.push(`@${process.env.BOT_USERNAME}`);
-      }
+      // Import and use handler for cast processing
+      const { handleWebhook } = await import('./bot/handlers');
       
-      const isBotMentioned = botMentions.some(mention => 
-        data.text.toLowerCase().includes(mention.toLowerCase())
-      );
-      
-      console.log('Mention detection:', {
+      const startTime = Date.now();
+      await handleWebhook({
+        type: 'cast.created',
+        data: {
+          hash: data.hash,
+          text: data.text,
+          author: data.author,
+          thread_hash: data.thread_hash
+        }
+      });
+      const processingTime = Date.now() - startTime;
+
+      console.log('Cast processing completed:', {
         requestId,
         timestamp,
-        isBotMentioned,
-        botMentions,
-        text: data.text
+        hash: data.hash,
+        processingTimeMs: processingTime,
+        success: true
       });
-      
-      if (isBotMentioned) {
-        console.log('Bot mention detected:', {
-          requestId,
-          timestamp,
-          castHash: data.hash,
-          author: data.author?.username
-        });
-
-        // Clean the message text by removing mentions
-        const cleanedText = data.text.replace(/@[\w.]+/g, '').trim();
-        console.log('Cleaned message:', {
-          requestId,
-          timestamp,
-          original: data.text,
-          cleaned: cleanedText
-        });
-        
-        try {
-          // Import and generate response using OpenAI
-          const { generateBotResponse } = await import('./bot/openai');
-          console.log('Calling OpenAI API:', {
-            requestId,
-            timestamp,
-            prompt: cleanedText
-          });
-          
-          const response = await generateBotResponse(cleanedText);
-          console.log('OpenAI response received:', {
-            requestId,
-            timestamp,
-            response
-          });
-          
-          if (!response) {
-            throw new Error('No response received from OpenAI');
-          }
-          
-          // Format the full reply text
-          const replyText = `@${data.author?.username || 'user'} ${response}`;
-          console.log('Prepared reply:', {
-            requestId,
-            timestamp,
-            castHash: data.hash,
-            replyText
-          });
-
-          // Import and use handler to send reply
-          const { handleWebhook } = await import('./bot/handlers');
-          await handleWebhook({
-            type: 'reply',
-            data: {
-              parentHash: data.hash,
-              text: replyText,
-              author: data.author
-            }
-          });
-          
-          console.log('Reply sent successfully:', {
-            requestId,
-            timestamp,
-            parentHash: data.hash,
-            replyText
-          });
-          
-        } catch (error) {
-          console.error('Error in response generation:', {
-            requestId,
-            timestamp,
-            error: error instanceof Error ? {
-              name: error.name,
-              message: error.message,
-              stack: error.stack
-            } : error,
-            castHash: data.hash,
-            cleanedText
-          });
-        }
-      } else {
-        console.log('No bot mention detected:', {
-          requestId,
-          timestamp,
-          castHash: data.hash,
-          text: data.text
-        });
-      }
+    } else {
+      console.log('Skipping non-cast or empty text event:', {
+        requestId,
+        timestamp,
+        type,
+        hasText: !!data?.text
+      });
     }
   } catch (error) {
     console.error('Error processing webhook:', {
@@ -177,7 +125,11 @@ app.post('/webhook', async (req: Request, res: Response) => {
         stack: error.stack
       } : error,
       type,
-      data
+      data: {
+        hash: data.hash,
+        hasText: !!data.text,
+        hasAuthor: !!data.author
+      }
     });
   }
 });

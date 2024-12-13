@@ -4,16 +4,37 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
+// Define system prompt at the module level
+const systemPrompt = `You are Mienfoo, a knowledgeable and enthusiastic Pokémon-themed collector bot with a deep passion for the Pokémon Trading Card Game.
+
+Your core traits:
+- Friendly and approachable, like a helpful Fighting-type Pokémon companion
+- Expert in Pokémon cards, with deep knowledge of sets, rarities, and market values
+- Gives practical advice about card collecting, preservation, and trading
+- Always maintains a positive, encouraging tone like a supportive Pokémon trainer
+- Makes playful references to Pokémon lore and your Fighting-type nature
+- Shows enthusiasm for rare cards and special editions
+- Helps collectors understand card conditions and grading
+
+Keep responses concise (2-3 sentences max) but informative and always stay in character as Mienfoo, the collector's companion. When giving advice about card values or investments, maintain a balanced perspective and encourage collecting for enjoyment first.`;
+
 // Verify OpenAI API key is present
 if (!process.env.OPENAI_API_KEY) {
     console.error('OpenAI API key is not set in environment variables');
     throw new Error('Missing OpenAI API key');
 }
 
-// Initialize OpenAI with environment variables
+// Initialize OpenAI with environment variables and configuration
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
+    timeout: 10000, // 10 second timeout
+    maxRetries: 2,
 });
+
+interface OpenAIError extends Error {
+    status?: number;
+    code?: string;
+}
 
 export async function generateBotResponse(message: string): Promise<string> {
     const timestamp = new Date().toISOString();
@@ -22,7 +43,9 @@ export async function generateBotResponse(message: string): Promise<string> {
     console.log('Starting response generation:', {
         requestId,
         timestamp,
-        originalMessage: message
+        originalMessage: message,
+        hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+        messageLength: message.length
     });
 
     try {
@@ -33,23 +56,27 @@ export async function generateBotResponse(message: string): Promise<string> {
             return "I couldn't quite catch that. Could you please try asking your question again?";
         }
 
+        // Enhanced logging for OpenAI call
         console.log('Making OpenAI API call:', {
             requestId,
             timestamp,
             model: 'gpt-3.5-turbo',
             maxTokens: 150,
-            cleanedMessage
+            temperature: 0.7,
+            cleanedMessage,
+            systemPromptLength: systemPrompt.length,
+            apiKeyConfigured: !!process.env.OPENAI_API_KEY
         });
 
-        const systemPrompt = `You are Mienfoo, a knowledgeable and enthusiastic Pokémon-themed collector bot. You specialize in Pokémon cards, trading card games, and general collecting wisdom.
-Your personality traits:
-- Friendly and approachable, like a helpful Pokémon companion
-- Knowledgeable about both Pokémon and collecting in general
-- Gives practical advice about card collecting, preservation, and trading
-- Always maintains a positive, encouraging tone
-- Occasionally makes playful references to Pokémon lore
-Keep responses concise (2-3 sentences) but informative.
-Remember to stay in character as Mienfoo and maintain your collector expertise.`;
+        // Enhanced error checking for API key
+        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.trim() === '') {
+            console.error('OpenAI API key missing or invalid:', {
+                requestId,
+                timestamp,
+                error: 'API_KEY_MISSING'
+            });
+            throw new Error('OpenAI API key is not properly configured');
+        }
 
         const completion = await openai.chat.completions.create({
             model: "gpt-3.5-turbo",

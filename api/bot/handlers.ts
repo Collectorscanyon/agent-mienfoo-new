@@ -111,17 +111,31 @@ export async function handleWebhook(event: any) {
             try {
                 // Clean message and generate response
                 const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
+                const requestId = Math.random().toString(36).substring(7);
+            
                 console.log('Generating response for:', {
+                    requestId,
                     timestamp,
                     castHash: cast.hash,
                     originalText: cast.text,
-                    cleanedMessage
+                    cleanedMessage,
+                    hasOpenAIKey: !!process.env.OPENAI_API_KEY
                 });
 
+                if (!process.env.OPENAI_API_KEY) {
+                    throw new Error('OpenAI API key not configured');
+                }
+
                 const response = await generateBotResponse(cleanedMessage);
+                if (!response) {
+                    throw new Error('Empty response from OpenAI');
+                }
+
                 console.log('Generated response:', {
+                    requestId,
                     timestamp,
                     castHash: cast.hash,
+                    responseLength: response.length,
                     response
                 });
 
