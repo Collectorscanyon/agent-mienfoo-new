@@ -24,18 +24,62 @@ const processedMentions = new Set<string>();
 
 // Verify webhook signature
 function verifySignature(signature: string | undefined, body: Buffer): boolean {
-  if (!signature || !config.WEBHOOK_SECRET) return false;
-  const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
-  const digest = `sha256=${hmac.update(body).digest('hex')}`;
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+  console.log('Debug: Verifying signature:', {
+    timestamp: new Date().toISOString(),
+    hasSignature: !!signature,
+    hasWebhookSecret: !!config.WEBHOOK_SECRET,
+    bodyLength: body?.length
+  });
+
+  // Skip verification in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Debug: Skipping signature verification in development');
+    return true;
+  }
+
+  if (!signature || !config.WEBHOOK_SECRET || !body) {
+    console.log('Debug: Missing required verification components');
+    return false;
+  }
+
+  try {
+    const hmac = crypto.createHmac('sha256', config.WEBHOOK_SECRET);
+    const calculatedSignature = `sha256=${hmac.update(body).digest('hex')}`;
+    
+    console.log('Debug: Signature comparison:', {
+      received: signature.slice(0, 20) + '...',
+      calculated: calculatedSignature.slice(0, 20) + '...'
+    });
+    
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(calculatedSignature)
+    );
+  } catch (error) {
+    console.error('Debug: Signature verification error:', error);
+    return false;
+  }
 }
 
 // Webhook endpoint
 router.post('/', express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf;
-  }
+  },
+  limit: '50kb'
 }), async (req: WebhookRequest, res: Response) => {
+  // Log full request details
+  console.log('Debug: Full webhook request:', {
+    timestamp: new Date().toISOString(),
+    headers: {
+      'content-type': req.headers['content-type'],
+      'content-length': req.headers['content-length'],
+      'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing',
+      'user-agent': req.headers['user-agent']
+    },
+    body: req.body,
+    rawBody: req.rawBody?.toString()
+  });
   const requestId = crypto.randomBytes(4).toString('hex');
   
   try {
