@@ -99,17 +99,37 @@ const validateWebhook = (req: Request, res: Response, next: NextFunction) => {
   }
 
   try {
-    const payload = JSON.stringify(req.body);
+    // Sort object keys recursively for consistent signature computation
+    function sortObjectKeys(obj: any): any {
+      if (Array.isArray(obj)) {
+        return obj.map(sortObjectKeys);
+      }
+      if (obj !== null && typeof obj === 'object') {
+        return Object.keys(obj).sort().reduce((result: any, key: string) => {
+          result[key] = sortObjectKeys(obj[key]);
+          return result;
+        }, {});
+      }
+      return obj;
+    }
+
+    const sortedBody = sortObjectKeys(req.body);
+    const payload = JSON.stringify(sortedBody);
     const computedSignature = crypto
       .createHmac('sha256', webhookSecret)
       .update(payload)
       .digest('hex');
+  
+    console.log('Signature verification:', {
+      receivedSignature: signature,
+      computedSignature,
+      webhookSecretLength: webhookSecret.length,
+      payloadPreview: payload.substring(0, 100) + '...',
+      sortedKeys: Object.keys(sortedBody).sort().join(',')
+    });
 
-    if (signature !== computedSignature) {
-      console.error('Invalid signature', {
-        requestId,
-        timestamp,
-        clientIp,
+    if (computedSignature !== signature) {
+      console.warn('Invalid signature', {
         expectedSignature: `${computedSignature.substring(0, 10)}...`,
         receivedSignature: `${signature.substring(0, 10)}...`
       });
