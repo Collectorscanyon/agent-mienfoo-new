@@ -49,21 +49,21 @@ app.get('/', (req: Request, res: Response) => {
     });
 });
 
-// Webhook endpoint with enhanced error handling and validation
+// Webhook endpoint with enhanced error handling, validation and detailed logging
 app.post(['/', '/webhook'], async (req: Request, res: Response) => {
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);
   
-  console.log('Webhook received:', {
+  console.log('Webhook request received:', {
     requestId,
     timestamp,
-    method: req.method,
     path: req.path,
-    headers: req.headers,
-    body: req.body,
+    method: req.method,
+    hasSignature: !!req.headers['x-neynar-signature'],
+    contentType: req.headers['content-type'],
+    bodySize: JSON.stringify(req.body).length,
     hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-    hasNeynarKey: !!process.env.NEYNAR_API_KEY,
-    signature: req.headers['x-neynar-signature']
+    hasNeynarKey: !!process.env.NEYNAR_API_KEY
   });
 
   // Enhanced signature verification
