@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { handleWebhook } from './bot/handlers';
 import dotenv from 'dotenv';
 
@@ -13,69 +13,66 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
-app.use((req, res, next) => {
+// Logging middleware
+app.use((req: Request, res: Response, next) => {
   console.log('Request received:', {
     timestamp: new Date().toISOString(),
     method: req.method,
     path: req.path,
-    headers: {
-      'content-type': req.headers['content-type'],
-      'content-length': req.headers['content-length']
-    },
+    headers: req.headers,
     body: req.body
   });
   next();
 });
 
 // Health check endpoint
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
   res.json({ status: 'ok', message: 'Bot API is running' });
 });
 
-// Webhook endpoint with explicit logging
-app.post('/webhook', async (req, res) => {
-  const timestamp = new Date().toISOString();
-  
-  console.log('Webhook request received:', {
-    timestamp,
-    path: '/webhook',
-    headers: req.headers,
-    body: req.body
-  });
+// Webhook endpoint
+app.post('/webhook', async (req: Request, res: Response) => {
+  console.log('Webhook endpoint hit with body:', req.body);
 
-  // Validate request body
-  if (!req.body || !req.body.type || !req.body.data) {
-    console.log('Invalid webhook payload:', { timestamp, body: req.body });
-    return res.status(400).json({ 
-      error: 'Invalid webhook payload',
-      timestamp 
-    });
+  // Check if the payload includes required fields
+  const { type, data } = req.body;
+  if (!type || !data) {
+    console.log('No "type" or "data" field found in the request body.');
+    return res.status(400).send('Missing required fields in request body');
   }
 
   // Send immediate 200 OK response
-  res.status(200).send('OK');
+  res.status(200).send('Webhook event processed successfully!');
 
   try {
     // Process webhook asynchronously
-    await handleWebhook(req.body);
+    await handleWebhook({ type, data });
     console.log('Webhook processed successfully:', {
-      timestamp,
-      type: req.body.type
+      timestamp: new Date().toISOString(),
+      type,
+      data
     });
   } catch (error) {
     console.error('Error processing webhook:', {
-      timestamp,
+      timestamp: new Date().toISOString(),
       error: error instanceof Error ? error.message : error,
-      body: req.body
+      type,
+      data
     });
   }
 });
 
 // Vercel serverless handler
-export default function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Convert Vercel's request to Express compatible format
+  const expressReq = Object.assign(req, {
+    get: (header: string) => req.headers[header],
+    header: (header: string) => req.headers[header],
+    accepts: () => true, // Simplified accepts implementation
+  });
+  
   return new Promise((resolve, reject) => {
-    app(req, res, (err) => {
+    app(expressReq as any, res, (err?: any) => {
       if (err) {
         console.error('Express error:', err);
         reject(err);
