@@ -166,8 +166,40 @@ router.get('/', (_req: Request, res: Response) => {
   });
 });
 
-// Webhook endpoint
-router.post('/', express.json(), logRequest, validateWebhook, async (req: Request, res: Response) => {
+// Enhanced webhook endpoint with detailed logging
+router.post('/', express.json(), async (req: Request, res: Response) => {
+  console.log('Raw webhook request received at endpoint:', {
+    path: req.path,
+    method: req.method,
+    headers: req.headers,
+    body: JSON.stringify(req.body),
+    timestamp: new Date().toISOString()
+  });
+  const requestId = crypto.randomBytes(4).toString('hex');
+  const timestamp = new Date().toISOString();
+  
+  console.log('Raw webhook request received:', {
+    requestId,
+    timestamp,
+    path: req.path,
+    method: req.method,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'x-neynar-signature': req.headers['x-neynar-signature'] ? 
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
+    },
+    body: req.body
+  });
+
+  try {
+    // Apply middleware in sequence
+    await new Promise((resolve, reject) => {
+      logRequest(req, res, (err?: any) => err ? reject(err) : resolve(undefined));
+    });
+    
+    await new Promise((resolve, reject) => {
+      validateWebhook(req, res, (err?: any) => err ? reject(err) : resolve(undefined));
+    });
   const { requestId, timestamp, clientIp } = res.locals;
 
   try {

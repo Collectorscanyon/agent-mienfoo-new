@@ -30,6 +30,22 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Request logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  console.log('Incoming request:', {
+    timestamp: new Date().toISOString(),
+    method: req.method,
+    path: req.path,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'x-neynar-signature': req.headers['x-neynar-signature'] ? 
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
+    },
+    body: req.body ? JSON.stringify(req.body).substring(0, 200) + '...' : 'empty'
+  });
+  next();
+});
+
 // Root health check endpoint
 app.get('/', (_req: Request, res: Response) => {
   res.json({ 
@@ -44,8 +60,32 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
-// Register webhook routes
-app.use('/api/webhook', webhookRouter);
+// Register webhook routes with enhanced logging
+console.log('Registering webhook routes...');
+
+// Handle both /api/webhook and /webhook paths
+const webhookPaths = ['/api/webhook', '/webhook'];
+webhookPaths.forEach(path => {
+  app.use(path, webhookRouter);
+  console.log(`Webhook route registered at ${path}`, {
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+
+  // Add explicit POST handler for more detailed logging
+  app.post(path, (req: Request, res: Response, next: NextFunction) => {
+    console.log(`Webhook POST request received at ${path}:`, {
+      timestamp: new Date().toISOString(),
+      headers: {
+        'content-type': req.headers['content-type'],
+        'x-neynar-signature': req.headers['x-neynar-signature'] ? 
+          `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing'
+      },
+      body: req.body ? JSON.stringify(req.body).substring(0, 200) + '...' : 'empty'
+    });
+    next();
+  });
+});
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

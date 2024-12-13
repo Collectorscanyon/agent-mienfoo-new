@@ -32,14 +32,6 @@ echo "Sorted payload: $SORTED_PAYLOAD"
 echo "Full signature: $SIGNATURE"
 echo "Payload keys (sorted): $(echo "$SORTED_PAYLOAD" | jq -r 'keys | join(",")')"
 
-# Debug information
-echo "Debug information:"
-echo "Webhook secret length: ${#WEBHOOK_SECRET}"
-echo "Original payload: $PAYLOAD"
-echo "Sorted payload: $SORTED_PAYLOAD"
-echo "Full signature: $SIGNATURE"
-echo "Payload keys (sorted): $(echo "$SORTED_PAYLOAD" | jq -r 'keys | join(",")')"
-
 # Log what we're about to do
 echo "Testing webhook endpoint..."
 echo "Payload: $PAYLOAD"
