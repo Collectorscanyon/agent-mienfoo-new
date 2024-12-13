@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from './config';
 
-// Simple root endpoint handler for Vercel
+// Root endpoint handler for Vercel with enhanced status information
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
