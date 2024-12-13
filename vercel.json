@@ -12,14 +12,26 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
-        "Access-Control-Max-Age": "86400"
+        "Access-Control-Max-Age": "86400",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
       },
       "dest": "/api/index.ts"
     },
     {
       "src": "/api/health",
       "methods": ["GET"],
+      "headers": {
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache"
+      },
       "dest": "/api/index.ts"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
@@ -28,5 +40,9 @@
   ],
   "env": {
     "NODE_ENV": "production"
+  },
+  "regions": ["iad1"],
+  "github": {
+    "silent": true
   }
 }

@@ -10,13 +10,43 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
-// Production security headers
+// Enhanced production security headers and monitoring
 if (process.env.NODE_ENV === 'production') {
   app.use((req: Request, res: Response, next: NextFunction) => {
+    // Security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()');
+    
+    // Request monitoring
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log('Request completed:', {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        duration: `${duration}ms`,
+        timestamp: new Date().toISOString()
+      });
+    });
+    
+    next();
+  });
+
+  // Request timeout middleware
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setTimeout(30000, () => {
+      console.error('Request timeout:', {
+        method: req.method,
+        path: req.path,
+        timestamp: new Date().toISOString()
+      });
+      res.status(408).json({ error: 'Request timeout' });
+    });
     next();
   });
 }
