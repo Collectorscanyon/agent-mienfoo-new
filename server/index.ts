@@ -36,19 +36,11 @@ app.use(express.json({
 
 app.use(cors());
 
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log('Incoming request:', {
-    timestamp: new Date().toISOString(),
-    method: req.method,
-    path: req.path,
-    headers: {
-      'content-type': req.headers['content-type'],
-      'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
-    }
-  });
-  next();
-});
+// Import debug logging middleware
+import { debugLogging } from './middleware/debugLogging';
+
+// Add debug logging middleware
+app.use(debugLogging);
 
 // Verify Neynar webhook signature
 function verifySignature(req: express.Request): boolean {
