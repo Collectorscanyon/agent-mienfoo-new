@@ -11,7 +11,7 @@ PAYLOAD='{
   "type": "cast.created",
   "data": {
     "hash": "testxyz123",
-    "text": "Hello @mienfoo.eth, what is your favorite Pokémon card?",
+    "text": "Hey @mienfoo.eth, could you tell me about collecting rare cards?",
     "author": {
       "username": "test_user",
       "fid": "123456"
