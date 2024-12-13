@@ -152,7 +152,7 @@ export async function handleWebhook(event: any) {
             }
 
             // Format and post reply
-            const replyText = `@${cast.author?.username} ${response} #CollectorsCanyon`;
+            const replyText = `@${cast.author?.username} ${response} /collectorscanyon`;
             
             const reply = await neynar.publishCast({
                 signerUuid: process.env.SIGNER_UUID || '',

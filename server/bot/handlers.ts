@@ -320,7 +320,7 @@ async function handleMention(cast: any) {
       console.log('Generated response:', response);
 
       // Prepare and send reply
-      const replyText = `@${cast.author.username} ${response}`;
+      const replyText = `@${cast.author.username} ${response} /collectorscanyon`;
       console.log('Sending reply:', {
         to: cast.author.username,
         inReplyTo: castHash,
