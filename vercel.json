@@ -1,3 +1,4 @@
+
 {
   "version": 2,
   "builds": [
@@ -10,33 +11,9 @@
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST",
-        "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
-        "Access-Control-Max-Age": "86400"
+        "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type"
       },
       "dest": "/api/routes/webhook.ts"
-    },
-    {
-      "src": "/api/webhook",
-      "methods": ["OPTIONS"],
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST",
-        "Access-Control-Allow-Headers": "X-Neynar-Signature, Content-Type",
-        "Access-Control-Max-Age": "86400"
-      },
-      "status": 204
-    },
-    { 
-      "src": "/", 
-      "dest": "/api/index.ts" 
     }
-  ],
-  "env": {
-    "NEYNAR_API_KEY": "@neynar_api_key",
-    "OPENAI_API_KEY": "@openai_api_key",
-    "SIGNER_UUID": "@signer_uuid",
-    "BOT_USERNAME": "@bot_username",
-    "WEBHOOK_SECRET": "@webhook_secret",
-    "BOT_FID": "@bot_fid"
-  }
+  ]
 }
