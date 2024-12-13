@@ -235,13 +235,26 @@ export async function handleWebhook(event: any) {
     });
 
     // Check for bot mentions
-    const isMentioned = (
-      cast.mentioned_profiles?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
-      cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
-      cast.text?.toLowerCase().includes('@mienfoo.eth')
-    );
+    // Enhanced mention detection with detailed logging
+    const mentionTypes = {
+      directMention: cast.mentioned_profiles?.some((m: any) => m.fid?.toString() === config.BOT_FID),
+      textMention: cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`),
+      ethMention: cast.text?.toLowerCase().includes('@mienfoo.eth')
+    };
 
-    if (isMentioned) {
+    console.log('Mention detection details:', {
+      timestamp: new Date().toISOString(),
+      castHash: cast.hash,
+      text: cast.text,
+      mentionTypes,
+      botFid: config.BOT_FID,
+      botUsername: config.BOT_USERNAME,
+      mentionedProfiles: cast.mentioned_profiles
+    });
+
+    const isBotMentioned = Object.values(mentionTypes).some(Boolean);
+
+    if (isBotMentioned) {
       console.log('Processing mention:', {
         hash: cast.hash,
         author: cast.author.username,

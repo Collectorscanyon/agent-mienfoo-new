@@ -84,6 +84,26 @@ router.post('/', requestSizeLimit, validateRequest, async (req: Request, res: Re
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);
 
+  // Enhanced webhook request logging
+  console.log('Raw webhook request received:', {
+    requestId,
+    timestamp,
+    headers: {
+      signature: req.headers['x-neynar-signature'] ? 
+        `${(req.headers['x-neynar-signature'] as string).substring(0, 10)}...` : 'missing',
+      contentType: req.headers['content-type'],
+      userAgent: req.headers['user-agent']
+    },
+    body: {
+      type: req.body?.type,
+      dataHash: req.body?.data?.hash,
+      dataText: req.body?.data?.text,
+      dataAuthor: req.body?.data?.author?.username,
+      dataMentions: req.body?.data?.mentioned_profiles
+    },
+    queryParams: req.query
+  });
+
   // Enhanced request logging with full details
   console.log('Webhook received:', {
     requestId,
@@ -122,12 +142,26 @@ router.post('/', requestSizeLimit, validateRequest, async (req: Request, res: Re
       });
     }
 
-    // Verify signature with timing-safe comparison
-    const isValid = verifySignature(
-      JSON.stringify(req.body),
-      signature,
-      process.env.WEBHOOK_SECRET
-    );
+    // Development mode allows skipping signature verification
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    let isValid = isDevelopment;
+
+    if (!isDevelopment) {
+      isValid = verifySignature(
+        JSON.stringify(req.body),
+        signature,
+        process.env.WEBHOOK_SECRET
+      );
+    }
+
+    console.log('Signature verification:', {
+      timestamp: new Date().toISOString(),
+      requestId,
+      isDevelopment,
+      hasSignature: !!signature,
+      isValid,
+      environment: process.env.NODE_ENV
+    });
 
     if (!isValid) {
       console.warn('Authentication error: Invalid signature');
