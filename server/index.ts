@@ -7,14 +7,14 @@ import { logger } from './utils/logger';
 import { config } from './config/environment';
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = 5000; // Explicitly set port for Mienfoo
 
-// Configure middleware
+// Configure middleware with proper limits for Farcaster webhooks
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50kb' }));
+app.use(express.urlencoded({ extended: true, limit: '50kb' }));
 
-// Request logging middleware
+// Request logging middleware for Mienfoo
 app.use((req, res, next) => {
   logger.info('Incoming request:', {
     timestamp: new Date().toISOString(),
