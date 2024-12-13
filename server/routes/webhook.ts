@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 
 const router = Router();
 
-// Initialize Neynar client with v2 SDK configuration
+// Initialize API clients
 const neynarConfig = new Configuration({
   apiKey: config.NEYNAR_API_KEY!,
   baseOptions: {
@@ -25,17 +25,15 @@ const processedMentions = new Set<string>();
 // Enhanced request logging middleware
 router.use((req: Request, res: Response, next) => {
   const requestId = crypto.randomBytes(4).toString('hex');
-  const timestamp = new Date().toISOString();
-
+  
   console.log('Debug: Incoming webhook request:', {
     requestId,
-    timestamp,
+    timestamp: new Date().toISOString(),
     method: req.method,
     path: req.path,
     headers: {
       'content-type': req.headers['content-type'],
-      'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing',
-      'user-agent': req.headers['user-agent']
+      'x-neynar-signature': req.headers['x-neynar-signature'] ? 'present' : 'missing'
     },
     body: req.method === 'POST' ? JSON.stringify(req.body, null, 2) : undefined
   });
@@ -55,7 +53,7 @@ router.use((req: Request, res: Response, next) => {
   next();
 });
 
-// Webhook endpoint
+// Main webhook endpoint
 router.post('/', express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -104,7 +102,7 @@ router.post('/', express.json({
       return res.status(200).json({ status: 'ignored', reason: 'already processed' });
     }
 
-    // Check for bot mention
+    // Check for bot mention with enhanced logging
     const isBotMentioned = data.mentioned_profiles?.some(
       (profile: any) => profile.username.toLowerCase() === (config.BOT_USERNAME || 'mienfoo.eth').toLowerCase()
     );
@@ -121,7 +119,7 @@ router.post('/', express.json({
       return res.status(200).json({ status: 'ignored', reason: 'bot not mentioned' });
     }
 
-    // Generate and post response
+    // Process mention and generate response
     try {
       const completion = await openai.chat.completions.create({
         model: "gpt-4-turbo-preview",
@@ -148,10 +146,12 @@ Always end your responses with /collectorscanyon`
         response
       });
 
+      // Post the response
       await neynar.publishCast({
-        signer_uuid: config.SIGNER_UUID!,
-        text: response,
-        parent_cast_id: { hash: data.hash }
+        signerUuid: config.SIGNER_UUID!,
+        text: `@${data.author.username} ${response}`,
+        parent: data.hash,
+        channelId: 'collectorscanyon'
       });
 
       // Mark as processed
