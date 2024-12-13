@@ -137,6 +137,13 @@ function shouldProcessThread(cast: any): boolean {
 export async function handleWebhook(event: any) {
   const timestamp = new Date().toISOString();
   const requestId = Math.random().toString(36).substring(7);
+
+  console.log('handleWebhook called:', {
+    requestId,
+    timestamp,
+    body: event?.body,
+    headers: event?.headers
+  });
   
   try {
     // Enhanced webhook logging with full context and request tracking
