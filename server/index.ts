@@ -195,10 +195,8 @@ async function createChannelCast(message: string) {
     }
 }
 
-// Test channel cast
-createChannelCast("Greetings, fellow collectors! Your wise friend Mienfoo is here to share the journey of collecting with you. What treasures shall we discover today? 🥋")
-    .then(() => console.log('Initial channel cast successful'))
-    .catch(error => console.error('Failed to create initial cast:', error));
+// Initial channel engagement will be handled by the scheduler
+console.log('Server started - channel engagement will begin according to schedule');
 
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log('Ready to handle mentions and cast in collectors canyon');
