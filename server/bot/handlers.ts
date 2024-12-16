@@ -3,7 +3,14 @@ import { config } from '../config';
 import { generateBotResponse } from './openai';
 
 const neynar = new NeynarAPIClient({ 
-  apiKey: config.NEYNAR_API_KEY
+  apiKey: config.NEYNAR_API_KEY,
+  configuration: {
+    baseOptions: {
+      headers: {
+        "x-neynar-api-key": config.NEYNAR_API_KEY
+      }
+    }
+  }
 });
 
 export async function handleWebhook(event: any) {
@@ -98,120 +105,3 @@ function shouldShareToCollectorsCanyon(cast: any): boolean {
          text.includes('trading') ||
          text.includes('rare');
 }
-
-export async function engageWithChannelContent() {
-  try {
-    console.log('Checking collectors canyon channel for content to engage with');
-    
-    // Get recent casts from the channel using the v2 API method
-    const response = await neynar.fetchFeed({ 
-      feedType: 'filter',
-      filterType: 'channel',
-      channelId: 'collectorscanyon',
-      limit: 20
-    });
-
-    if (!response?.casts) {
-      console.log('No casts found in channel');
-      return;
-    }
-
-    console.log(`Found ${response.casts.length} casts in the channel`);
-    const casts = response.casts;
-    
-    for (const cast of casts) {
-      try {
-        // Skip own casts
-        if (cast.author.fid.toString() === config.BOT_FID) {
-          console.log('Skipping own cast');
-          continue;
-        }
-
-        if (isCollectionRelatedContent(cast.text)) {
-          const engagementLevel = getEngagementType(cast.text);
-          console.log('Found collection-related content:', {
-            author: cast.author.username,
-            text: cast.text.substring(0, 50) + '...',
-            castHash: cast.hash,
-            engagementLevel
-          });
-
-          // Always like collection-related content
-          await neynar.publishReaction({
-            signerUuid: config.SIGNER_UUID,
-            reactionType: 'like',
-            target: cast.hash
-          });
-          console.log(`Liked cast ${cast.hash} by ${cast.author.username}`);
-
-          // For high engagement content, recast as well
-          if (engagementLevel === 'high') {
-            await neynar.publishRecast({
-              signerUuid: config.SIGNER_UUID,
-              castHash: cast.hash
-            });
-            console.log(`Recasted high-engagement content from ${cast.author.username}`);
-          }
-          
-          // Add a delay between actions to avoid rate limits
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      } catch (error) {
-        console.error('Error processing cast:', {
-          castHash: cast.hash,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-        // Continue with next cast even if one fails
-        continue;
-      }
-    }
-    
-    console.log('Finished engaging with channel content');
-  } catch (error) {
-    console.error('Error engaging with channel content:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
-    });
-  }
-}
-
-function isCollectionRelatedContent(text: string): boolean {
-  const highPriorityKeywords = [
-    'collect', 'rare', 'vintage', 'limited edition',
-    'first edition', 'mint condition', 'graded', 'sealed',
-    'treasure', 'showcase', 'collection', 'display'
-  ];
-  
-  const collectionTypes = [
-    'cards', 'trading cards', 'figures', 'comics',
-    'manga', 'coins', 'stamps', 'antiques', 'toys',
-    'memorabilia', 'artwork', 'plushies'
-  ];
-  
-  text = text.toLowerCase();
-  
-  // Check for high-priority collection keywords
-  const hasHighPriority = highPriorityKeywords.some(keyword => text.includes(keyword));
-  
-  // Check for collection type mentions
-  const hasCollectionType = collectionTypes.some(type => text.includes(type));
-  
-  // Content should either have a high-priority keyword or combine a collection type with value-related terms
-  return hasHighPriority || (hasCollectionType && text.match(/rare|value|worth|price|grade|condition/));
-}
-
-function getEngagementType(text: string): 'high' | 'medium' | 'low' {
-  const enthusiasm = text.match(/!+|\?+|amazing|incredible|wow|awesome/gi)?.length || 0;
-  const hasPhotos = text.includes('url.xyz') || text.includes('img'); // Basic check for media
-  const wordCount = text.split(/\s+/).length;
-  
-  if ((enthusiasm >= 2 && wordCount > 10) || hasPhotos) {
-    return 'high';
-  } else if (enthusiasm >= 1 || wordCount > 15) {
-    return 'medium';
-  }
-  return 'low';
-}
-
-// Start periodic engagement
-setInterval(engageWithChannelContent, 5 * 60 * 1000); // Check every 5 minutes

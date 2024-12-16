@@ -3,7 +3,6 @@ import bodyParser from 'body-parser';
 import type { Request, Response, NextFunction } from 'express';
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from './config';
-import { handleWebhook, engageWithChannelContent } from './bot/handlers';
 
 // Initialize OpenAI later to prevent startup issues
 let generateBotResponse: (message: string) => Promise<string>;
@@ -177,12 +176,7 @@ app.post('/webhook', async (req: Request, res: Response) => {
 
 // Start server
 const { PORT } = config;
-
-// Initialize scheduler for periodic casts
-import { initializeScheduler } from './bot/scheduler';
-
 app.listen(PORT, '0.0.0.0', () => {
-    console.log('Server started - initializing scheduled tasks');
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log('Ready to handle mentions and cast in collectors canyon');
     console.log('Bot config:', {
@@ -191,16 +185,6 @@ app.listen(PORT, '0.0.0.0', () => {
         hasNeynarKey: !!config.NEYNAR_API_KEY,
         hasSignerUuid: !!config.SIGNER_UUID
     });
-
-    // Initialize scheduler
-    initializeScheduler();
-
-    // Start channel engagement with delay to avoid immediate actions
-    setTimeout(() => {
-        engageWithChannelContent()
-            .then(() => console.log('Initial channel engagement complete'))
-            .catch(error => console.error('Failed initial channel engagement:', error));
-    }, 5 * 60 * 1000); // Wait 5 minutes before first engagement
 }).on('error', (error) => {
     console.error('Server failed to start:', error);
     process.exit(1);

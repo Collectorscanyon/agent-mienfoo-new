@@ -3,10 +3,8 @@ import { config } from '../config';
 
 const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
 
-// Set cast interval and cooldown
-const CAST_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-const CAST_COOLDOWN = 12 * 60 * 60 * 1000; // 12 hours
-let lastCastTime = Date.now(); // Initialize with current time to prevent immediate cast
+// Set 8-hour interval for casts
+const CAST_INTERVAL = 8 * 60 * 60 * 1000;
 
 const messages = [
   "👋 What's your favorite item in your collection? Share with me! 🤔",
@@ -20,30 +18,23 @@ const messages = [
 
 export async function createDailyCast() {
   try {
-    const now = Date.now();
-    if (now - lastCastTime < CAST_COOLDOWN) {
-      console.log('Skipping cast due to cooldown period');
-      return;
-    }
-
     const randomMessage = messages[Math.floor(Math.random() * messages.length)];
     
     console.log('Creating daily cast:', randomMessage);
     await neynar.publishCast({
       signerUuid: config.SIGNER_UUID,
-      text: randomMessage,
+      text: `${randomMessage}\n\n#CollectorsCanyonClub`,
       channelId: 'collectorscanyon'
     });
     
-    lastCastTime = now;
-    console.log('Daily cast created successfully at:', new Date(now).toISOString());
+    console.log('Daily cast created successfully');
   } catch (error) {
     console.error('Error creating daily cast:', error);
   }
 }
 
 export function initializeScheduler() {
-  console.log('Initializing scheduler with interval:', CAST_INTERVAL);
   setInterval(createDailyCast, CAST_INTERVAL);
+  setTimeout(createDailyCast, 5000);
   console.log('Scheduler initialized - ready to create periodic casts');
 }
