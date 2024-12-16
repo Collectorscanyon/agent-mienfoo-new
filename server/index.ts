@@ -32,23 +32,31 @@ app.use((req: Request, res: Response, next) => {
     next();
 });
 
-// Parse JSON bodies (with less strict parsing)
-app.use(bodyParser.json({ 
-    strict: false,
-    limit: '10mb'
-}));
+// Raw body parsing for webhook verification
+app.use(express.raw({ type: 'application/json' }));
 
-// Parse URL-encoded bodies
-app.use(bodyParser.urlencoded({ 
-    extended: true,
-    limit: '10mb'
-}));
+// Parse JSON for other routes
+app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path === '/webhook') {
+        try {
+            req.body = JSON.parse(req.body.toString());
+        } catch (error) {
+            console.error('Webhook body parse error:', error);
+            return res.status(400).json({ error: 'Invalid JSON' });
+        }
+    }
+    next();
+});
 
 // Error handling for parsing errors
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    console.error('Request processing error:', {
+        path: req.path,
+        method: req.method,
+        error: err.message
+    });
     if (err instanceof SyntaxError) {
-        console.error('Parse error:', err);
-        return res.status(200).json({ 
+        return res.status(400).json({ 
             status: 'error',
             message: 'Invalid request format'
         });
@@ -64,25 +72,43 @@ app.get('/', (_req: Request, res: Response) => {
 // Webhook endpoint with enhanced mention handling
 app.post('/webhook', async (req: Request, res: Response) => {
     try {
-        // Log the full webhook payload for debugging
-        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
+        console.log('Webhook received:', {
+            headers: req.headers,
+            body: req.body,
+            timestamp: new Date().toISOString()
+        });
+
+        // Validate webhook payload
+        if (!req.body || typeof req.body !== 'object') {
+            console.error('Invalid webhook payload:', req.body);
+            return res.status(400).json({ error: 'Invalid webhook payload' });
+        }
 
         // Send immediate acknowledgment
         res.status(200).json({ status: 'success', message: 'Webhook received' });
 
         const { type, data } = req.body;
+        console.log('Processing webhook:', { type, timestamp: new Date().toISOString() });
 
         // Process webhook asynchronously
         if (type === 'cast.created') {
             const cast = data;
             console.log('Processing cast:', JSON.stringify(cast, null, 2));
             
-            // Enhanced mention detection
-            const isBotMentioned = (
-                cast.mentions?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
-                cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
-                cast.text?.toLowerCase().includes('@mienfoo.eth')
-            );
+            // Enhanced mention detection with logging
+            const mentionChecks = {
+                byFid: cast.mentions?.some((m: any) => m.fid?.toString() === config.BOT_FID),
+                byUsername: cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`),
+                byEth: cast.text?.toLowerCase().includes('@mienfoo.eth')
+            };
+
+            console.log('Mention detection:', {
+                checks: mentionChecks,
+                castText: cast.text,
+                mentions: cast.mentions
+            });
+
+            const isBotMentioned = Object.values(mentionChecks).some(check => check);
 
             if (isBotMentioned) {
                 console.log('Bot mention detected:', {
