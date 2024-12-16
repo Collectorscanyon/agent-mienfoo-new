@@ -42,31 +42,10 @@ Important:
 - For greetings, be welcoming and invite collection discussion`;
 
 export async function generateBotResponse(userMessage: string): Promise<string> {
-  const timestamp = new Date().toISOString();
-  const requestId = Math.random().toString(36).substring(7);
-  
-  console.log('Starting response generation:', {
-    requestId,
-    timestamp,
-    message: userMessage,
-    hasOpenAIKey: !!config.OPENAI_API_KEY
-  });
-
-  if (!config.OPENAI_API_KEY) {
-    console.error('Missing OpenAI API key');
-    return "🎭 Apologies, I'm taking a brief meditation break. Please try again later! #CollectorsCanyonClub";
-  }
-
   const MAX_RETRIES = 3;
   const BASE_DELAY = 2000; // 2 seconds
 
   async function attemptCompletion(attempt: number = 0): Promise<string> {
-    console.log('Attempting OpenAI completion:', {
-      requestId,
-      timestamp,
-      attempt: attempt + 1,
-      maxRetries: MAX_RETRIES
-    });
     try {
       console.log(`Attempt ${attempt + 1}/${MAX_RETRIES} to generate response for:`, userMessage);
       
@@ -179,44 +158,21 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
     const randomResponse = responses[Math.floor(Math.random() * responses.length)];
     
     // If we've exhausted retries or hit a non-rate-limit error
-      return handleFallbackResponse(userMessage, error);
+      return handleFallbackResponse(cleanedMessage, error);
     }
   }
 
   return attemptCompletion();
 }
 
-function getMessageType(message: string): 'greeting' | 'collection' | 'question' {
-  const lowerMessage = message.toLowerCase();
-  if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || lowerMessage.includes('hey')) {
-    return 'greeting';
-  } else if (lowerMessage.includes('?')) {
-    return 'question';
-  }
-  return 'collection';
-}
-
-function selectFallbackResponse(type: 'greeting' | 'collection' | 'question', isRateLimit: boolean): string {
-  const responses = {
-    greeting: isRateLimit 
-      ? "🥋 Taking a brief meditation break! Tell me about your collection journey later! #CollectorsCanyonClub"
-      : "👋 Greetings, fellow collector! What brings you to our canyon today? #CollectorsCanyonClub",
-    collection: isRateLimit
-      ? "⏳ My chi needs realignment! Share your favorite piece when I return! #CollectorsCanyonClub"
-      : "🌟 Every collection tells a story! I'd love to hear about yours! #CollectorsCanyonClub",
-    question: isRateLimit
-      ? "🌟 A wise collector pauses to think deeply. Let me meditate on this! #CollectorsCanyonClub"
-      : "📚 Let me share some collector's wisdom with you soon! #CollectorsCanyonClub"
-  };
-  return responses[type];
-}
-
 async function handleFallbackResponse(message: string, error: any): Promise<string> {
   console.log('Generating fallback response due to error:', error.message);
   
+  // Determine message type and context
   const messageType = getMessageType(message);
   const isRateLimit = error.response?.status === 429;
   
+  // Select appropriate fallback response
   const response = selectFallbackResponse(messageType, isRateLimit);
   
   console.log('Using fallback response:', {

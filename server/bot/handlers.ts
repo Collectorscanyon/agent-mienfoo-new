@@ -25,13 +25,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 function isBotMessage(cast: any): boolean {
-  if (!cast?.author) {
-    console.log('Bot message check failed: No author data', {
-      timestamp: new Date().toISOString(),
-      castData: cast
-    });
-    return false;
-  }
+  if (!cast?.author) return false;
   
   // Strict bot identity check using both FID and username
   const botUsernames = [
@@ -44,20 +38,17 @@ function isBotMessage(cast: any): boolean {
     botUsernames.includes(cast.author.username?.toLowerCase())
   );
 
-  // Enhanced logging for bot message detection with full context
+  // Enhanced logging for bot message detection
   console.log('Bot message detection:', {
     timestamp: new Date().toISOString(),
     castHash: cast.hash,
     authorFid: cast.author.fid,
     authorUsername: cast.author.username,
     threadHash: cast.thread_hash,
-    text: cast.text,
-    mentions: cast.mentioned_profiles,
     isBotAuthor,
     botFid: config.BOT_FID,
     botUsername: config.BOT_USERNAME,
-    isReply: !!cast.parent_hash,
-    channelContext: cast.author_channel_context
+    isReply: !!cast.parent_hash
   });
 
   // If this is a bot message, also add it to processed casts to prevent duplicates
@@ -277,71 +268,46 @@ async function isBotMessageInChain(castHash: string, depth: number = 0): Promise
 }
 
 async function handleMention(cast: any) {
-  const startTime = Date.now();
-  const timestamp = new Date().toISOString();
-  const castHash = cast.hash;
-  
-  console.log('Starting mention processing:', {
-    timestamp,
-    castHash,
-    mentionContext: {
-      text: cast.text,
-      author: cast.author?.username,
-      threadHash: cast.thread_hash,
-      parentHash: cast.parent_hash,
-      channel: cast.channel,
-      mentions: cast.mentioned_profiles
-    }
-  });
-
   try {
+    const timestamp = new Date().toISOString();
+    const castHash = cast.hash;
+    
     // Verify we haven't already processed this mention
     if (processedCastHashes.has(castHash)) {
       console.log('Skipping already processed mention:', {
         timestamp,
         castHash,
-        reason: 'Already handled this mention',
-        timeSinceStart: `${Date.now() - startTime}ms`
+        reason: 'Already handled this mention'
       });
       return;
     }
     
-    // Track this mention immediately to prevent duplicate processing
+    // Enhanced mention logging
+    console.log('Processing new mention:', {
+      timestamp,
+      hash: castHash,
+      threadHash: cast.thread_hash,
+      author: cast.author.username,
+      text: cast.text
+    });
+
+    // Track this mention immediately
     processedCastHashes.add(castHash);
     
     // Cleanup after 10 minutes
     setTimeout(() => processedCastHashes.delete(castHash), 10 * 60 * 1000);
 
-    // Like the mention with enhanced error handling
-    console.log('Attempting to like cast:', {
-      timestamp,
-      castHash,
-      signerUuid: config.SIGNER_UUID ? 'present' : 'missing'
-    });
-    
+    // Like the mention
+    console.log('Attempting to like cast:', castHash);
     try {
       const reaction = await neynar.publishReaction({
         signerUuid: config.SIGNER_UUID,
         reactionType: 'like',
         target: castHash
       });
-      console.log('Successfully liked the mention:', {
-        timestamp,
-        castHash,
-        reactionHash: reaction?.hash,
-        timeSinceStart: `${Date.now() - startTime}ms`
-      });
+      console.log('Successfully liked the mention:', reaction);
     } catch (error) {
-      console.error('Error liking mention:', {
-        timestamp,
-        castHash,
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : error,
-        timeSinceStart: `${Date.now() - startTime}ms`
-      });
+      console.error('Error liking mention:', error instanceof Error ? error.message : error);
       // Continue with reply even if like fails
     }
 
@@ -354,7 +320,7 @@ async function handleMention(cast: any) {
       console.log('Generated response:', response);
 
       // Prepare and send reply
-      const replyText = `@${cast.author.username} ${response} /collectorscanyon`;
+      const replyText = `@${cast.author.username} ${response}`;
       console.log('Sending reply:', {
         to: cast.author.username,
         inReplyTo: castHash,
@@ -407,7 +373,7 @@ async function generateTextResponse(text: string): Promise<string> {
   return await generateBotResponse(cleanedMessage);
 }
 
-const processedCastHashes = new Set<string>();
+const processedCastHashes = new Set<string>(); // Reintroduced from original code
 
 // Removed automatic channel engagement functionality to prevent duplicate responses
 // and focus solely on webhook-driven interactions
