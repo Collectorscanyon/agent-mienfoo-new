@@ -27,18 +27,17 @@ setInterval(() => {
 function isBotMessage(cast: any): boolean {
   if (!cast?.author) return false;
   
-  // Strict bot identity check using both FID and username
-  const botUsernames = [
-    config.BOT_USERNAME.toLowerCase(),
-    'mienfoo.eth'
-  ];
-  
+  // Strict bot identity check - only check exact matches
   const isBotAuthor = (
     cast.author.fid?.toString() === config.BOT_FID ||
-    botUsernames.includes(cast.author.username?.toLowerCase())
+    cast.author.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
+    cast.author.username?.toLowerCase() === 'mienfoo.eth'
   );
 
-  // Enhanced logging for bot message detection
+  // Only consider messages from the bot itself, not thread ownership
+  // This prevents the bot from ignoring valid mentions in threads it participated in
+  
+  // Enhanced logging for debugging
   console.log('Bot message detection:', {
     timestamp: new Date().toISOString(),
     castHash: cast.hash,
@@ -47,16 +46,8 @@ function isBotMessage(cast: any): boolean {
     threadHash: cast.thread_hash,
     isBotAuthor,
     botFid: config.BOT_FID,
-    botUsername: config.BOT_USERNAME,
-    isReply: !!cast.parent_hash
+    botUsername: config.BOT_USERNAME
   });
-
-  // If this is a bot message, also add it to processed casts to prevent duplicates
-  if (isBotAuthor && cast.hash) {
-    processedCastHashes.add(cast.hash);
-    // Clean up after 5 minutes
-    setTimeout(() => processedCastHashes.delete(cast.hash), 5 * 60 * 1000);
-  }
 
   return isBotAuthor;
 }
