@@ -1,17 +1,11 @@
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from '../config';
+import { analyzeImage, generateImageResponse } from './vision';
 import { generateBotResponse } from './openai';
 
-// Initialize Neynar client with enhanced error handling
+// Initialize Neynar client
 const neynar = new NeynarAPIClient({ 
   apiKey: config.NEYNAR_API_KEY
-});
-
-console.log('Neynar client initialized:', {
-  timestamp: new Date().toISOString(),
-  hasApiKey: !!config.NEYNAR_API_KEY,
-  hasSignerUuid: !!config.SIGNER_UUID,
-  hasBotConfig: !!config.BOT_USERNAME && !!config.BOT_FID
 });
 
 // Track processed threads and responses
@@ -39,21 +33,15 @@ function isBotMessage(cast: any): boolean {
     return false;
   }
   
-  // Enhanced bot identity check with multiple patterns
-  const botIdentifiers = {
-    fid: config.BOT_FID,
-    usernames: [
-      config.BOT_USERNAME.toLowerCase(),
-      'mienfoo.eth',
-      'mienfoo'
-    ]
-  };
+  // Strict bot identity check using both FID and username
+  const botUsernames = [
+    config.BOT_USERNAME.toLowerCase(),
+    'mienfoo.eth'
+  ];
   
   const isBotAuthor = (
-    cast.author.fid?.toString() === botIdentifiers.fid ||
-    botIdentifiers.usernames.some(username => 
-      cast.author.username?.toLowerCase() === username
-    )
+    cast.author.fid?.toString() === config.BOT_FID ||
+    botUsernames.includes(cast.author.username?.toLowerCase())
   );
 
   // Enhanced logging for bot message detection with full context
@@ -103,7 +91,9 @@ function shouldProcessThread(cast: any): boolean {
   if (!processedThreads.has(threadHash)) {
     processedThreads.set(threadHash, {
       lastResponseTime: currentTime,
-      responses: new Set([cast.hash])
+      responses: new Set([cast.hash]),
+      initialAuthor: cast.author?.username,
+      parentHash: cast.parent_hash
     });
     console.log('New thread initialized:', { castKey, threadHash });
     return true;
@@ -135,20 +125,11 @@ function shouldProcessThread(cast: any): boolean {
 }
 
 export async function handleWebhook(event: any) {
-  const timestamp = new Date().toISOString();
-  const requestId = Math.random().toString(36).substring(7);
-
-  console.log('handleWebhook called:', {
-    requestId,
-    timestamp,
-    body: event?.body,
-    headers: event?.headers
-  });
-  
   try {
-    // Enhanced webhook logging with full context and request tracking
+    const timestamp = new Date().toISOString();
+    
+    // Enhanced webhook logging with full context
     console.log('Webhook event received:', {
-      requestId,
       timestamp,
       eventType: event.body?.type,
       castHash: event.body?.data?.hash,
@@ -157,8 +138,7 @@ export async function handleWebhook(event: any) {
       author: event.body?.data?.author?.username,
       text: event.body?.data?.text,
       isReply: !!event.body?.data?.parent_hash,
-      channelContext: event.body?.data?.author_channel_context,
-      mentionedProfiles: event.body?.data?.mentioned_profiles
+      channelContext: event.body?.data?.author_channel_context
     });
 
     if (!event.body?.type || !event.body?.data) {
@@ -255,42 +235,13 @@ export async function handleWebhook(event: any) {
     });
 
     // Check for bot mentions
-    // Enhanced mention detection with detailed logging
-    const mentionTypes = {
-      directMention: cast.mentioned_profiles?.some((m: any) => 
-        m.fid?.toString() === config.BOT_FID || 
-        m.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase()
-      ),
-      textMention: cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`),
-      ethMention: cast.text?.toLowerCase().includes('@mienfoo.eth'),
-      channelMention: cast.text?.toLowerCase().includes('/collectorscanyon')
-    };
+    const isMentioned = (
+      cast.mentioned_profiles?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
+      cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
+      cast.text?.toLowerCase().includes('@mienfoo.eth')
+    );
 
-    console.log('Mention detection analysis:', {
-      timestamp: new Date().toISOString(),
-      castHash: cast.hash,
-      mentionTypes,
-      text: cast.text,
-      mentionedProfiles: cast.mentioned_profiles,
-      botConfig: {
-        username: config.BOT_USERNAME,
-        fid: config.BOT_FID
-      }
-    });
-
-    console.log('Mention detection details:', {
-      timestamp: new Date().toISOString(),
-      castHash: cast.hash,
-      text: cast.text,
-      mentionTypes,
-      botFid: config.BOT_FID,
-      botUsername: config.BOT_USERNAME,
-      mentionedProfiles: cast.mentioned_profiles
-    });
-
-    const isBotMentioned = Object.values(mentionTypes).some(Boolean);
-
-    if (isBotMentioned) {
+    if (isMentioned) {
       console.log('Processing mention:', {
         hash: cast.hash,
         author: cast.author.username,
