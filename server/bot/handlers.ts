@@ -1,382 +1,217 @@
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from '../config';
-import { analyzeImage, generateImageResponse } from './vision';
 import { generateBotResponse } from './openai';
 
-// Initialize Neynar client
 const neynar = new NeynarAPIClient({ 
   apiKey: config.NEYNAR_API_KEY
 });
 
-// Track processed threads and responses
-const processedThreads = new Map<string, {
-  lastResponseTime: number;
-  responses: Set<string>;
-}>();
-
-// Cleanup old entries every 5 minutes
-setInterval(() => {
-  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-  for (const [threadHash, data] of processedThreads.entries()) {
-    if (data.lastResponseTime < tenMinutesAgo) {
-      processedThreads.delete(threadHash);
-    }
-  }
-}, 5 * 60 * 1000);
-
-function isBotMessage(cast: any): boolean {
-  if (!cast?.author) return false;
-  
-  // Strict bot identity check - only check exact matches
-  const isBotAuthor = (
-    cast.author.fid?.toString() === config.BOT_FID ||
-    cast.author.username?.toLowerCase() === config.BOT_USERNAME.toLowerCase() ||
-    cast.author.username?.toLowerCase() === 'mienfoo.eth'
-  );
-
-  // Only consider messages from the bot itself, not thread ownership
-  // This prevents the bot from ignoring valid mentions in threads it participated in
-  
-  // Enhanced logging for debugging
-  console.log('Bot message detection:', {
-    timestamp: new Date().toISOString(),
-    castHash: cast.hash,
-    authorFid: cast.author.fid,
-    authorUsername: cast.author.username,
-    threadHash: cast.thread_hash,
-    isBotAuthor,
-    botFid: config.BOT_FID,
-    botUsername: config.BOT_USERNAME
-  });
-
-  return isBotAuthor;
-}
-
-function shouldProcessThread(cast: any): boolean {
-  if (!cast?.thread_hash) return false;
-  
-  const threadHash = cast.thread_hash;
-  const currentTime = Date.now();
-  const castKey = `${cast.hash}-${threadHash}`;
-  
-  // Enhanced logging for thread processing decision
-  console.log('Thread processing check:', {
-    timestamp: new Date().toISOString(),
-    castKey,
-    threadHash,
-    author: cast.author?.username,
-    isReply: !!cast.parent_hash,
-    hasThread: processedThreads.has(threadHash)
-  });
-
-  // If we haven't seen this thread before
-  if (!processedThreads.has(threadHash)) {
-    processedThreads.set(threadHash, {
-      lastResponseTime: currentTime,
-      responses: new Set([cast.hash]),
-      initialAuthor: cast.author?.username,
-      parentHash: cast.parent_hash
-    });
-    console.log('New thread initialized:', { castKey, threadHash });
-    return true;
-  }
-
-  const threadData = processedThreads.get(threadHash)!;
-  
-  // Strict duplicate check
-  if (threadData.responses.has(cast.hash)) {
-    console.log('Duplicate cast detected:', { castKey, threadHash });
-    return false;
-  }
-
-  // Cooldown period check (2 minutes)
-  if (currentTime - threadData.lastResponseTime < 120 * 1000) {
-    console.log('Thread cooldown active:', {
-      castKey,
-      threadHash,
-      timeRemaining: `${Math.round((120 * 1000 - (currentTime - threadData.lastResponseTime)) / 1000)}s`
-    });
-    return false;
-  }
-
-  // Update thread data
-  threadData.responses.add(cast.hash);
-  threadData.lastResponseTime = currentTime;
-  console.log('Thread processing approved:', { castKey, threadHash });
-  return true;
-}
-
 export async function handleWebhook(event: any) {
+  const { type, cast } = event;
+  
   try {
-    const timestamp = new Date().toISOString();
-    
-    // Enhanced webhook logging with full context
-    console.log('Webhook event received:', {
-      timestamp,
-      eventType: event.body?.type,
-      castHash: event.body?.data?.hash,
-      threadHash: event.body?.data?.thread_hash,
-      parentHash: event.body?.data?.parent_hash,
-      author: event.body?.data?.author?.username,
-      text: event.body?.data?.text,
-      isReply: !!event.body?.data?.parent_hash,
-      channelContext: event.body?.data?.author_channel_context
+    console.log('Webhook received:', {
+      type,
+      timestamp: new Date().toISOString(),
+      castHash: cast?.hash,
+      authorUsername: cast?.author?.username
     });
 
-    if (!event.body?.type || !event.body?.data) {
-      console.log('Invalid webhook event structure');
-      return;
-    }
-
-    const { type, data: cast } = event.body;
-    
-    // Early validation and filtering
-    if (type !== 'cast.created') {
-      console.log('Skipping non-cast event:', type);
-      return;
-    }
-
-    // Create a unique key for this cast
-    const castKey = `${cast.hash}-${cast.thread_hash}`;
-    
-    // Check if we've already processed this cast
-    if (cast?.hash && processedCastHashes.has(cast.hash)) {
-      console.log('Skipping duplicate cast:', {
-        timestamp,
-        castHash: cast.hash,
-        threadHash: cast.thread_hash,
-        reason: 'Already processed this cast hash'
-      });
-      return;
-    }
-    
-    // Add to processed set immediately
-    if (cast?.hash) {
-      processedCastHashes.add(cast.hash);
-      // Cleanup old hashes after 10 minutes to prevent memory growth
-      setTimeout(() => processedCastHashes.delete(cast.hash), 10 * 60 * 1000);
-    }
-
-    if (processedThreads.has(cast.thread_hash) && processedThreads.get(cast.thread_hash)?.responses.has(cast.hash)) {
-      console.log('Skipping already processed cast in thread:', {
-        timestamp,
-        castKey,
-        reason: 'Already processed in this thread'
-      });
-      return;
-    }
-
-    // Enhanced bot message and self-mention detection
-    if (isBotMessage(cast)) {
-      console.log('Skipping bot-related message:', {
-        timestamp,
-        castKey,
-        author: cast.author?.username,
+    if (type === 'cast.created') {
+      // Check for mentions using both FID and username
+      const isMentioned = cast.mentions?.some((m: any) => m.fid === config.BOT_FID) ||
+                         cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`);
+      
+      console.log('Mention detection:', {
+        hasMention: isMentioned,
+        botFid: config.BOT_FID,
+        botUsername: config.BOT_USERNAME,
         text: cast.text,
-        reason: 'Bot message or in bot thread'
+        mentions: cast.mentions
       });
-      return;
+
+      if (isMentioned) {
+        console.log('Bot mention detected in cast:', cast.text);
+        await handleMention(cast);
+      }
+      
+      // Check if cast should be shared to collectorscanyon
+      if (shouldShareToCollectorsCanyon(cast)) {
+        await shareToCollectorsCanyon(cast);
+      }
     }
-
-    // Check if this is a message chain started by the bot
-    const isPartOfBotThread = cast.parent_hash && await isBotMessageInChain(cast.parent_hash);
-    if (isPartOfBotThread) {
-      console.log('Skipping message in bot-initiated thread:', {
-        timestamp,
-        hash: cast.hash,
-        threadHash: cast.thread_hash,
-        parentHash: cast.parent_hash,
-        reason: 'Part of bot conversation'
-      });
-      return;
-    }
-
-    // Enhanced duplicate and thread management
-    if (!shouldProcessThread(cast)) {
-      console.log('Thread management prevented processing:', {
-        hash: cast.hash,
-        thread: cast.thread_hash,
-        timestamp: new Date().toISOString()
-      });
-      return;
-    }
-
-    console.log('Processing new message in thread:', {
-      hash: cast.hash,
-      thread: cast.thread_hash,
-      parent: cast.parent_hash,
-      timestamp: new Date().toISOString()
-    });
-
-    console.log('Processing new cast:', {
-      hash: cast.hash,
-      key: castKey,
-      author: cast.author?.username,
-      text: cast.text,
-      timestamp: new Date().toISOString()
-    });
-
-    // Check for bot mentions
-    const isMentioned = (
-      cast.mentioned_profiles?.some((m: any) => m.fid?.toString() === config.BOT_FID) ||
-      cast.text?.toLowerCase().includes(`@${config.BOT_USERNAME.toLowerCase()}`) ||
-      cast.text?.toLowerCase().includes('@mienfoo.eth')
-    );
-
-    if (isMentioned) {
-      console.log('Processing mention:', {
-        hash: cast.hash,
-        author: cast.author.username,
-        text: cast.text
-      });
-      await handleMention(cast);
-    }
-
   } catch (error) {
     console.error('Error in webhook handler:', error);
-  }
-}
-
-// Helper function to check if a message is part of a bot-initiated thread
-async function isBotMessageInChain(castHash: string, depth: number = 0): Promise<boolean> {
-  if (depth > 5) return false; // Limit recursion depth
-  
-  try {
-    const cast = await neynar.getCast(castHash);
-    if (!cast) return false;
-    
-    if (isBotMessage(cast)) return true;
-    
-    if (cast.parent_hash) {
-      return await isBotMessageInChain(cast.parent_hash, depth + 1);
-    }
-    
-    return false;
-  } catch (error) {
-    console.error('Error checking message chain:', error);
-    return false;
+    throw error;
   }
 }
 
 async function handleMention(cast: any) {
   try {
-    const timestamp = new Date().toISOString();
-    const castHash = cast.hash;
-    
-    // Verify we haven't already processed this mention
-    if (processedCastHashes.has(castHash)) {
-      console.log('Skipping already processed mention:', {
-        timestamp,
-        castHash,
-        reason: 'Already handled this mention'
-      });
-      return;
-    }
-    
-    // Enhanced mention logging
-    console.log('Processing new mention:', {
-      timestamp,
-      hash: castHash,
-      threadHash: cast.thread_hash,
+    console.log('Processing mention:', {
+      timestamp: new Date().toISOString(),
+      castHash: cast.hash,
       author: cast.author.username,
-      text: cast.text
+      text: cast.text,
+      mentions: cast.mentions
+    });
+    
+    // Like the mention first
+    await neynar.publishReaction({
+      signerUuid: config.SIGNER_UUID,
+      reactionType: 'like',
+      target: cast.hash
     });
 
-    // Track this mention immediately
-    processedCastHashes.add(castHash);
-    
-    // Cleanup after 10 minutes
-    setTimeout(() => processedCastHashes.delete(castHash), 10 * 60 * 1000);
-
-    // Like the mention
-    console.log('Attempting to like cast:', castHash);
-    try {
-      const reaction = await neynar.publishReaction({
-        signerUuid: config.SIGNER_UUID,
-        reactionType: 'like',
-        target: castHash
-      });
-      console.log('Successfully liked the mention:', reaction);
-    } catch (error) {
-      console.error('Error liking mention:', error instanceof Error ? error.message : error);
-      // Continue with reply even if like fails
-    }
-
     // Generate and send response
-    try {
-      const cleanedMessage = cast.text.replace(/@[\w.]+/g, '').trim();
-      console.log('Generating response for cleaned message:', cleanedMessage);
-      
-      const response = await generateTextResponse(cleanedMessage);
-      console.log('Generated response:', response);
+    const cleanedMessage = cast.text.replace(new RegExp(`@${config.BOT_USERNAME}`, 'i'), '').trim();
+    const response = await generateBotResponse(cleanedMessage);
+    
+    await neynar.publishCast({
+      signerUuid: config.SIGNER_UUID,
+      text: `@${cast.author.username} ${response}`,
+      parent: cast.hash,
+      channelId: 'collectorscanyon'
+    });
+  } catch (error) {
+    console.error('Error handling mention:', error);
+    throw error;
+  }
+}
 
-      // Prepare and send reply
-      const replyText = `@${cast.author.username} ${response}`;
-      console.log('Sending reply:', {
-        to: cast.author.username,
-        inReplyTo: castHash,
-        text: replyText
-      });
+async function shareToCollectorsCanyon(cast: any) {
+  try {
+    await neynar.publishCast({
+      signerUuid: config.SIGNER_UUID,
+      text: `💡 Interesting discussion about collectibles!\n\n${cast.text}`,
+      channelId: 'collectorscanyon'
+    });
+  } catch (error) {
+    console.error('Error sharing to channel:', error);
+  }
+}
 
-      const reply = await neynar.publishCast({
-        signerUuid: config.SIGNER_UUID,
-        text: replyText,
-        parent: castHash,
-        channelId: 'collectorscanyon'
-      });
-      
-      console.log('Reply sent successfully:', {
-        replyHash: reply.cast.hash,
-        timestamp: new Date().toISOString()
-      });
-      
-    } catch (error) {
-      console.error('Error in response generation or reply:', {
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : error,
-        timestamp: new Date().toISOString()
-      });
-      throw error; // Rethrow to trigger error handling
+function shouldShareToCollectorsCanyon(cast: any): boolean {
+  const text = cast.text.toLowerCase();
+  return text.includes('collect') || 
+         text.includes('cards') || 
+         text.includes('trading') ||
+         text.includes('rare');
+}
+
+export async function engageWithChannelContent() {
+  try {
+    console.log('Checking collectors canyon channel for content to engage with');
+    
+    // Get recent casts from the channel using the v2 API method
+    const response = await neynar.fetchFeed({ 
+      feedType: 'filter',
+      filterType: 'channel',
+      channelId: 'collectorscanyon',
+      limit: 20
+    });
+
+    if (!response?.casts) {
+      console.log('No casts found in channel');
+      return;
     }
 
-  } catch (error) {
-    console.error('Fatal error handling mention:', {
-      error: error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : error,
-      cast: {
-        hash: cast.hash,
-        author: cast.author.username,
-        text: cast.text
+    console.log(`Found ${response.casts.length} casts in the channel`);
+    const casts = response.casts;
+    
+    for (const cast of casts) {
+      try {
+        // Skip own casts
+        if (cast.author.fid.toString() === config.BOT_FID) {
+          console.log('Skipping own cast');
+          continue;
+        }
+
+        if (isCollectionRelatedContent(cast.text)) {
+          const engagementLevel = getEngagementType(cast.text);
+          console.log('Found collection-related content:', {
+            author: cast.author.username,
+            text: cast.text.substring(0, 50) + '...',
+            castHash: cast.hash,
+            engagementLevel
+          });
+
+          // Always like collection-related content
+          await neynar.publishReaction({
+            signerUuid: config.SIGNER_UUID,
+            reactionType: 'like',
+            target: cast.hash
+          });
+          console.log(`Liked cast ${cast.hash} by ${cast.author.username}`);
+
+          // For high engagement content, recast as well
+          if (engagementLevel === 'high') {
+            await neynar.publishRecast({
+              signerUuid: config.SIGNER_UUID,
+              castHash: cast.hash
+            });
+            console.log(`Recasted high-engagement content from ${cast.author.username}`);
+          }
+          
+          // Add a delay between actions to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (error) {
+        console.error('Error processing cast:', {
+          castHash: cast.hash,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        // Continue with next cast even if one fails
+        continue;
       }
+    }
+    
+    console.log('Finished engaging with channel content');
+  } catch (error) {
+    console.error('Error engaging with channel content:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
     });
   }
 }
 
-async function generateTextResponse(text: string): Promise<string> {
-  const cleanedMessage = text.replace(/@[\w.]+/g, '').trim();
-  console.log('Generating response for cleaned message:', cleanedMessage);
-  return await generateBotResponse(cleanedMessage);
+function isCollectionRelatedContent(text: string): boolean {
+  const highPriorityKeywords = [
+    'collect', 'rare', 'vintage', 'limited edition',
+    'first edition', 'mint condition', 'graded', 'sealed',
+    'treasure', 'showcase', 'collection', 'display'
+  ];
+  
+  const collectionTypes = [
+    'cards', 'trading cards', 'figures', 'comics',
+    'manga', 'coins', 'stamps', 'antiques', 'toys',
+    'memorabilia', 'artwork', 'plushies'
+  ];
+  
+  text = text.toLowerCase();
+  
+  // Check for high-priority collection keywords
+  const hasHighPriority = highPriorityKeywords.some(keyword => text.includes(keyword));
+  
+  // Check for collection type mentions
+  const hasCollectionType = collectionTypes.some(type => text.includes(type));
+  
+  // Content should either have a high-priority keyword or combine a collection type with value-related terms
+  return hasHighPriority || (hasCollectionType && text.match(/rare|value|worth|price|grade|condition/));
 }
 
-const processedCastHashes = new Set<string>(); // Reintroduced from original code
+function getEngagementType(text: string): 'high' | 'medium' | 'low' {
+  const enthusiasm = text.match(/!+|\?+|amazing|incredible|wow|awesome/gi)?.length || 0;
+  const hasPhotos = text.includes('url.xyz') || text.includes('img'); // Basic check for media
+  const wordCount = text.split(/\s+/).length;
+  
+  if ((enthusiasm >= 2 && wordCount > 10) || hasPhotos) {
+    return 'high';
+  } else if (enthusiasm >= 1 || wordCount > 15) {
+    return 'medium';
+  }
+  return 'low';
+}
 
-// Removed automatic channel engagement functionality to prevent duplicate responses
-// and focus solely on webhook-driven interactions
-
-// export async function engageWithChannelContent() {
-//   // Functionality removed to prevent duplicate responses
-// }
-
-// function isCollectionRelatedContent(text: string): boolean {
-//   // Helper function removed as part of channel engagement cleanup
-//   return false;
-// }
-
-// Disabled periodic channel engagement to prevent duplicate responses
-// setInterval(engageWithChannelContent, 5 * 60 * 1000);
+// Start periodic engagement
+setInterval(engageWithChannelContent, 5 * 60 * 1000); // Check every 5 minutes

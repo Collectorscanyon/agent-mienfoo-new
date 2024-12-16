@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import type { Request, Response, NextFunction } from 'express';
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { config } from './config';
-import { handleWebhook } from './bot/handlers';
+import { handleWebhook, engageWithChannelContent } from './bot/handlers';
 
 // Initialize OpenAI later to prevent startup issues
 let generateBotResponse: (message: string) => Promise<string>;
@@ -62,61 +62,21 @@ app.get('/', (_req: Request, res: Response) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Track processed webhook events
-const processedWebhookEvents = new Set<string>();
+// Webhook endpoint with enhanced mention handling
+app.post('/webhook', async (req: Request, res: Response) => {
+    try {
+        // Log the full webhook payload for debugging
+        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
 
-// Webhook endpoint with enhanced mention handling and proper response codes
-app.post('/webhook', (req: Request, res: Response) => {
-    // Send 200 OK immediately to prevent retries
-    res.status(200).send('OK');
+        // Send immediate acknowledgment
+        res.status(200).json({ status: 'success', message: 'Webhook received' });
 
-    // Process the webhook asynchronously
-    setImmediate(async () => {
-        try {
-            console.log('Webhook request received:', {
-                timestamp: new Date().toISOString(),
-                headers: req.headers,
-                body: req.body,
-                path: req.path
-            });
+        const { type, data } = req.body;
 
-            const { type, data } = req.body;
-            
-            // Early validation
-            if (!type || !data || type !== 'cast.created' || !data.hash) {
-                console.log('Invalid webhook payload:', { type, hasData: !!data });
-                return;
-            }
-
-            // Enhanced deduplication check using both cast hash and timestamp
-            const eventId = `${type}-${data.hash}-${data.timestamp}`;
-            if (processedWebhookEvents.has(eventId)) {
-                console.log('Skipping duplicate webhook event:', {
-                    eventId,
-                    timestamp: new Date().toISOString()
-                });
-                return;
-            }
-
-            // Mark as processed immediately
-            processedWebhookEvents.add(eventId);
-            
-            // Cleanup old events after 10 minutes
-            setTimeout(() => processedWebhookEvents.delete(eventId), 10 * 60 * 1000);
-
-        // Process webhook
+        // Process webhook asynchronously
         if (type === 'cast.created') {
             const cast = data;
-            console.log('Processing new cast:', {
-                hash: cast.hash,
-                author: cast.author?.username,
-                text: cast.text,
-                hasAttachments: cast.attachments?.length > 0,
-                attachments: cast.attachments,
-                hasEmbeds: cast.embeds?.length > 0,
-                embeds: cast.embeds,
-                timestamp: new Date().toISOString()
-            });
+            console.log('Processing cast:', JSON.stringify(cast, null, 2));
             
             // Enhanced mention detection
             const isBotMentioned = (
@@ -202,45 +162,18 @@ app.post('/webhook', (req: Request, res: Response) => {
             }
         }
     } catch (error) {
-            console.error('Webhook processing error:', {
-                timestamp: new Date().toISOString(),
-                error: error instanceof Error ? {
-                    name: error.name,
-                    message: error.message,
-                    stack: error.stack
-                } : error,
-                webhookBody: req.body
-            });
-        }
-    });
-});
-
-// Enhanced error handling for the entire app
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-    console.error('Global error handler:', {
-        timestamp: new Date().toISOString(),
-        error: err instanceof Error ? {
-            name: err.name,
-            message: err.message,
-            stack: err.stack
-        } : err
-    });
-    
-    // Only send response if headers haven't been sent
-    if (!res.headersSent) {
-        res.status(500).json({ 
-            status: 'error',
-            message: 'Internal server error'
+        console.error('Webhook processing error:', {
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            } : error,
+            webhookBody: req.body
         });
+        // Already sent 200 OK, just log the error
     }
 });
-
-// Cleanup old processed events periodically (every hour)
-setInterval(() => {
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    console.log('Cleaning up old processed webhook events');
-    processedWebhookEvents.clear();
-}, 60 * 60 * 1000);
 
 // Start server
 const { PORT } = config;
@@ -276,7 +209,10 @@ createChannelCast("Greetings, fellow collectors! Your wise friend Mienfoo is her
         hasSignerUuid: !!config.SIGNER_UUID
     });
 
-console.log('Bot is ready to handle webhook events');
+// Immediately start engaging with channel content
+engageWithChannelContent()
+  .then(() => console.log('Initial channel engagement complete'))
+  .catch(error => console.error('Failed initial channel engagement:', error));
 }).on('error', (error) => {
     console.error('Server failed to start:', error);
     process.exit(1);
