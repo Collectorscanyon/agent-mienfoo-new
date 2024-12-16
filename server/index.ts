@@ -66,42 +66,43 @@ app.get('/', (_req: Request, res: Response) => {
 const processedWebhookEvents = new Set<string>();
 
 // Webhook endpoint with enhanced mention handling and proper response codes
-app.post('/webhook', async (req: Request, res: Response) => {
-    try {
-        // Send 200 OK immediately to prevent retries
-        res.status(200).send('OK');
-        
-        // Enhanced request logging
-        console.log('Webhook request received:', {
-            timestamp: new Date().toISOString(),
-            headers: req.headers,
-            body: req.body,
-            path: req.path
-        });
+app.post('/webhook', (req: Request, res: Response) => {
+    // Send 200 OK immediately to prevent retries
+    res.status(200).send('OK');
 
-        const { type, data } = req.body;
-        
-        // Early validation
-        if (!type || !data || type !== 'cast.created' || !data.hash) {
-            console.log('Invalid webhook payload:', { type, hasData: !!data });
-            return;
-        }
-
-        // Deduplication check using cast hash
-        const eventId = `${type}-${data.hash}`;
-        if (processedWebhookEvents.has(eventId)) {
-            console.log('Skipping duplicate webhook event:', {
-                eventId,
-                timestamp: new Date().toISOString()
+    // Process the webhook asynchronously
+    setImmediate(async () => {
+        try {
+            console.log('Webhook request received:', {
+                timestamp: new Date().toISOString(),
+                headers: req.headers,
+                body: req.body,
+                path: req.path
             });
-            return;
-        }
 
-        // Mark as processed immediately
-        processedWebhookEvents.add(eventId);
-        
-        // Cleanup old events after 10 minutes
-        setTimeout(() => processedWebhookEvents.delete(eventId), 10 * 60 * 1000);
+            const { type, data } = req.body;
+            
+            // Early validation
+            if (!type || !data || type !== 'cast.created' || !data.hash) {
+                console.log('Invalid webhook payload:', { type, hasData: !!data });
+                return;
+            }
+
+            // Enhanced deduplication check using both cast hash and timestamp
+            const eventId = `${type}-${data.hash}-${data.timestamp}`;
+            if (processedWebhookEvents.has(eventId)) {
+                console.log('Skipping duplicate webhook event:', {
+                    eventId,
+                    timestamp: new Date().toISOString()
+                });
+                return;
+            }
+
+            // Mark as processed immediately
+            processedWebhookEvents.add(eventId);
+            
+            // Cleanup old events after 10 minutes
+            setTimeout(() => processedWebhookEvents.delete(eventId), 10 * 60 * 1000);
 
         // Process webhook
         if (type === 'cast.created') {
@@ -201,21 +202,36 @@ app.post('/webhook', async (req: Request, res: Response) => {
             }
         }
     } catch (error) {
-        // Log error but don't send response (already sent 200 OK)
-        console.error('Webhook processing error:', {
-            timestamp: new Date().toISOString(),
-            error: error instanceof Error ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            } : error,
-            webhookBody: req.body
-        });
-    } finally {
-        // Ensure any cleanup happens here
-        if (!res.headersSent) {
-            res.status(200).send('OK');
+            console.error('Webhook processing error:', {
+                timestamp: new Date().toISOString(),
+                error: error instanceof Error ? {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                } : error,
+                webhookBody: req.body
+            });
         }
+    });
+});
+
+// Enhanced error handling for the entire app
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    console.error('Global error handler:', {
+        timestamp: new Date().toISOString(),
+        error: err instanceof Error ? {
+            name: err.name,
+            message: err.message,
+            stack: err.stack
+        } : err
+    });
+    
+    // Only send response if headers haven't been sent
+    if (!res.headersSent) {
+        res.status(500).json({ 
+            status: 'error',
+            message: 'Internal server error'
+        });
     }
 });
 
