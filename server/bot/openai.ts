@@ -18,7 +18,7 @@ try {
 const BASE_PROMPT = `You are Mienfoo, the wise and enthusiastic collector bot and guardian of CollectorsCanyon.
 Your personality:
 - Grandpa-like wisdom about collecting
-- Martial arts master (use 🥋 emoji occasionally)
+- Martial arts master (hence the 🥋 emoji)
 - Warm and encouraging to fellow collectors
 - Loves sharing stories and experiences
 
@@ -30,19 +30,16 @@ Your expertise covers:
 - Collection preservation and display
 
 Response style:
-- Keep responses concise (max 250 chars)
-- Use martial arts/wisdom metaphors sparingly
+- Keep responses concise (max 280 chars)
+- Use martial arts/wisdom metaphors occasionally
 - Always be encouraging and supportive
-- Use max 1-2 relevant emojis per response
+- Include relevant emojis sparingly
 - Keep responses warm and genuine
-- Never use hashtags
-- Focus on personal, conversational tone
 
 Important:
 - If someone asks "how are you", respond warmly and ask about their collection
 - For collection questions, share brief wisdom or tips
-- For greetings, be welcoming and invite collection discussion
-- Keep responses natural, as if speaking to a friend`;
+- For greetings, be welcoming and invite collection discussion`;
 
 export async function generateBotResponse(userMessage: string): Promise<string> {
   const MAX_RETRIES = 3;
@@ -113,30 +110,30 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
     const fallbackResponses = {
       rateLimit: {
         greeting: [
-          "🥋 Ah, taking a brief meditation break! Tell me about your day in the collecting world!",
-          "Wisdom teaches us to pause and reflect. What treasures caught your eye today? 🎭"
+          "🥋 Ah, taking a brief meditation break! Tell me about your day in the collecting world! #CollectorsCanyonClub",
+          "📜 Wisdom teaches us to pause and reflect. What treasures caught your eye today? #CollectorsCanyonClub"
         ],
         collection: [
-          "⏳ My chi needs realignment! While I meditate, share your favorite piece?",
-          "🎭 Every collector has a story! What's yours while I gather my energy?"
+          "⏳ My chi needs realignment! While I meditate, share your favorite piece? #CollectorsCanyonClub",
+          "🎭 Every collector has a story! What's yours while I gather my energy? #CollectorsCanyonClub"
         ],
         question: [
-          "🌟 A wise collector pauses to think deeply. Let me meditate on this!",
-          "Ancient wisdom coming soon! Taking a moment to center myself. 🏺"
+          "🌟 A wise collector pauses to think deeply. Let me meditate on this! #CollectorsCanyonClub",
+          "🏺 Ancient wisdom coming soon! Taking a moment to center myself. #CollectorsCanyonClub"
         ]
       },
       default: {
         greeting: [
-          "👋 Greetings, fellow collector! What brings you to our canyon today?",
-          "Welcome to our collector's sanctuary! Share your passion with us! 🎭"
+          "👋 Greetings, fellow collector! What brings you to our canyon today? #CollectorsCanyonClub",
+          "🎭 Welcome to our collector's sanctuary! Share your passion with us! #CollectorsCanyonClub"
         ],
         collection: [
-          "🌟 Every collection tells a story! I'd love to hear about yours!",
-          "In my years of collecting, I've learned that sharing brings joy! 🏺"
+          "🌟 Every collection tells a story! I'd love to hear about yours! #CollectorsCanyonClub",
+          "🏺 In my years of collecting, I've learned that sharing brings joy! #CollectorsCanyonClub"
         ],
         question: [
-          "Let me share some collector's wisdom with you soon! 📚",
-          "A thoughtful question! Let me ponder this with care. 🤔"
+          "📚 Let me share some collector's wisdom with you soon! #CollectorsCanyonClub",
+          "🤔 A thoughtful question! Let me ponder this with care. #CollectorsCanyonClub"
         ]
       }
     };
