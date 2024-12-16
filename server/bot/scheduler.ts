@@ -4,9 +4,9 @@ import { config } from '../config';
 const neynar = new NeynarAPIClient({ apiKey: config.NEYNAR_API_KEY });
 
 // Set cast interval and cooldown
-const CAST_INTERVAL = 8 * 60 * 60 * 1000; // 8 hours
-const CAST_COOLDOWN = 4 * 60 * 60 * 1000; // 4 hours
-let lastCastTime = 0;
+const CAST_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const CAST_COOLDOWN = 12 * 60 * 60 * 1000; // 12 hours
+let lastCastTime = Date.now(); // Initialize with current time to prevent immediate cast
 
 const messages = [
   "👋 What's your favorite item in your collection? Share with me! 🤔",

@@ -177,27 +177,12 @@ app.post('/webhook', async (req: Request, res: Response) => {
 
 // Start server
 const { PORT } = config;
+
+// Initialize scheduler for periodic casts
+import { initializeScheduler } from './bot/scheduler';
+
 app.listen(PORT, '0.0.0.0', () => {
-// Function to create a cast in the collectors canyon channel
-async function createChannelCast(message: string) {
-    try {
-        console.log('Creating cast in collectors canyon:', message);
-        const result = await neynar.publishCast({
-            signerUuid: config.SIGNER_UUID,
-            text: message,
-            channelId: "collectorscanyon"
-        });
-        console.log('Cast created successfully:', result);
-        return result;
-    } catch (error) {
-        console.error('Error creating cast:', error);
-        throw error;
-    }
-}
-
-// Initial channel engagement will be handled by the scheduler
-console.log('Server started - channel engagement will begin according to schedule');
-
+    console.log('Server started - initializing scheduled tasks');
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log('Ready to handle mentions and cast in collectors canyon');
     console.log('Bot config:', {
@@ -207,10 +192,15 @@ console.log('Server started - channel engagement will begin according to schedul
         hasSignerUuid: !!config.SIGNER_UUID
     });
 
-// Immediately start engaging with channel content
-engageWithChannelContent()
-  .then(() => console.log('Initial channel engagement complete'))
-  .catch(error => console.error('Failed initial channel engagement:', error));
+    // Initialize scheduler
+    initializeScheduler();
+
+    // Start channel engagement with delay to avoid immediate actions
+    setTimeout(() => {
+        engageWithChannelContent()
+            .then(() => console.log('Initial channel engagement complete'))
+            .catch(error => console.error('Failed initial channel engagement:', error));
+    }, 5 * 60 * 1000); // Wait 5 minutes before first engagement
 }).on('error', (error) => {
     console.error('Server failed to start:', error);
     process.exit(1);
