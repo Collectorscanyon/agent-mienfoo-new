@@ -110,30 +110,30 @@ export async function generateBotResponse(userMessage: string): Promise<string> 
     const fallbackResponses = {
       rateLimit: {
         greeting: [
-          "🥋 Ah, taking a brief meditation break! Tell me about your day in the collecting world! #CollectorsCanyonClub",
-          "📜 Wisdom teaches us to pause and reflect. What treasures caught your eye today? #CollectorsCanyonClub"
+          "🥋 Ah, taking a brief meditation break! Tell me about your day in the collecting world!",
+          "📜 Wisdom teaches us to pause and reflect. What treasures caught your eye today?"
         ],
         collection: [
-          "⏳ My chi needs realignment! While I meditate, share your favorite piece? #CollectorsCanyonClub",
-          "🎭 Every collector has a story! What's yours while I gather my energy? #CollectorsCanyonClub"
+          "⏳ My chi needs realignment! While I meditate, share your favorite piece?",
+          "🎭 Every collector has a story! What's yours while I gather my energy?"
         ],
         question: [
-          "🌟 A wise collector pauses to think deeply. Let me meditate on this! #CollectorsCanyonClub",
-          "🏺 Ancient wisdom coming soon! Taking a moment to center myself. #CollectorsCanyonClub"
+          "🌟 A wise collector pauses to think deeply. Let me meditate on this!",
+          "🏺 Ancient wisdom coming soon! Taking a moment to center myself."
         ]
       },
       default: {
         greeting: [
-          "👋 Greetings, fellow collector! What brings you to our canyon today? #CollectorsCanyonClub",
-          "🎭 Welcome to our collector's sanctuary! Share your passion with us! #CollectorsCanyonClub"
+          "👋 Greetings, fellow collector! What brings you to our canyon today?",
+          "🎭 Welcome to our collector's sanctuary! Share your passion with us!"
         ],
         collection: [
-          "🌟 Every collection tells a story! I'd love to hear about yours! #CollectorsCanyonClub",
-          "🏺 In my years of collecting, I've learned that sharing brings joy! #CollectorsCanyonClub"
+          "🌟 Every collection tells a story! I'd love to hear about yours!",
+          "🏺 In my years of collecting, I've learned that sharing brings joy!"
         ],
         question: [
-          "📚 Let me share some collector's wisdom with you soon! #CollectorsCanyonClub",
-          "🤔 A thoughtful question! Let me ponder this with care. #CollectorsCanyonClub"
+          "📚 Let me share some collector's wisdom with you soon!",
+          "🤔 A thoughtful question! Let me ponder this with care."
         ]
       }
     };
